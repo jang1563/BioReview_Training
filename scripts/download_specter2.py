@@ -30,14 +30,22 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     args = build_parser().parse_args()
-    args.output_dir.mkdir(parents=True, exist_ok=True)
-    path = snapshot_download(
-        repo_id=args.repo_id,
-        local_dir=str(args.output_dir),
-    )
+    try:
+        args.output_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        print(f"ERROR: cannot create output directory: {exc}")
+        raise SystemExit(1) from exc
+    try:
+        path = snapshot_download(
+            repo_id=args.repo_id,
+            local_dir=str(args.output_dir),
+        )
+    except Exception as exc:
+        print(f"ERROR: download failed: {exc}")
+        raise SystemExit(1) from exc
     print(f"downloaded_to={path}")
-    print(f"set BIOREVIEW_EMBED_MODEL={args.output_dir}")
-    print("optional_offline=export BIOREVIEW_EMBED_LOCAL_ONLY=1")
+    print(f"export BIOREVIEW_EMBED_MODEL={args.output_dir}")
+    print("export BIOREVIEW_EMBED_LOCAL_ONLY=1  # optional for offline mode")
 
 
 if __name__ == "__main__":

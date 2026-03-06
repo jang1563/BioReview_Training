@@ -293,9 +293,13 @@ def main() -> None:
             gt_all = entry.get("concerns", [])
             if not isinstance(gt_all, list):
                 gt_all = []
-            gt_active = [c for c in gt_all if not c.get("requires_figure_reading", False)]
+            gt_active = [
+                c for c in gt_all if not c.get("requires_figure_reading", False)
+            ]
+            # Filter gt_active to only concerns with non-empty text,
+            # so indices stay aligned between gt_active and gt_texts.
+            gt_active = [c for c in gt_active if str(c.get("concern_text", "")).strip()]
             gt_texts = [str(c.get("concern_text", "")).strip() for c in gt_active]
-            gt_texts = [t for t in gt_texts if t]
 
             model_info: dict[str, dict[str, Any]] = {}
             for alias, tool_concerns in [
@@ -319,7 +323,9 @@ def main() -> None:
                 )
 
                 matched_top: list[dict[str, Any]] = []
-                for m in sorted(matches, key=lambda m: m.score, reverse=True)[: args.max_pairs]:
+                for m in sorted(matches, key=lambda m: m.score, reverse=True)[
+                    : args.max_pairs
+                ]:
                     matched_top.append(
                         {
                             "score": float(m.score),
@@ -330,13 +336,19 @@ def main() -> None:
                                 if m.tool_idx < len(tool_concerns)
                                 else ""
                             ),
-                            "gt_text": gt_texts[m.gt_idx] if m.gt_idx < len(gt_texts) else "",
+                            "gt_text": (
+                                gt_texts[m.gt_idx] if m.gt_idx < len(gt_texts) else ""
+                            ),
                         }
                     )
 
-                unmatched_gt = [(i, gt_texts[i]) for i in range(n_gt) if i not in matched_gt_idxs]
+                unmatched_gt = [
+                    (i, gt_texts[i]) for i in range(n_gt) if i not in matched_gt_idxs
+                ]
                 unmatched_tool = [
-                    (i, tool_concerns[i]) for i in range(n_tool) if i not in matched_tool_idxs
+                    (i, tool_concerns[i])
+                    for i in range(n_tool)
+                    if i not in matched_tool_idxs
                 ]
 
                 model_info[alias] = {

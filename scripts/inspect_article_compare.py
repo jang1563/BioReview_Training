@@ -25,7 +25,9 @@ def load_jsonl(path: Path) -> list[dict[str, Any]]:
             try:
                 rows.append(json.loads(line))
             except json.JSONDecodeError as exc:
-                print(f"[warn] malformed JSON at {path}:{lineno}: {exc}", file=sys.stderr)
+                print(
+                    f"[warn] malformed JSON at {path}:{lineno}: {exc}", file=sys.stderr
+                )
     return rows
 
 
@@ -203,8 +205,9 @@ def main() -> None:
         algorithm=args.algorithm,  # type: ignore[arg-type]
     )
 
+    # Filter gt_active to only concerns with non-empty text, so indices stay aligned.
+    gt_active = [c for c in gt_active if str(c.get("concern_text", "")).strip()]
     gt_texts = [str(c.get("concern_text", "")).strip() for c in gt_active]
-    gt_texts = [t for t in gt_texts if t]
 
     print(f"article_index={idx}")
     print(f"article_id={art_id}")
@@ -240,7 +243,11 @@ def main() -> None:
         n_matched = len(matches)
         recall = n_matched / n_gt if n_gt else 0.0
         precision = n_matched / n_tool if n_tool else 0.0
-        f1 = (2 * precision * recall / (precision + recall)) if (precision + recall) else 0.0
+        f1 = (
+            (2 * precision * recall / (precision + recall))
+            if (precision + recall)
+            else 0.0
+        )
 
         print(f"[{alias}]")
         print(
@@ -276,11 +283,15 @@ def main() -> None:
             c = gt_active[i]
             cat = str(c.get("category", "other"))
             sev = str(c.get("severity", "unknown"))
-            print(f"    gt#{i:02d} [{cat}/{sev}] {truncate(gt_texts[i], args.max_text_chars)}")
+            print(
+                f"    gt#{i:02d} [{cat}/{sev}] {truncate(gt_texts[i], args.max_text_chars)}"
+            )
         if not unmatched_gt:
             print("    (none)")
         elif args.max_list_items > 0 and len(unmatched_gt) > args.max_list_items:
-            print(f"    ... ({len(unmatched_gt) - args.max_list_items} more unmatched GT)")
+            print(
+                f"    ... ({len(unmatched_gt) - args.max_list_items} more unmatched GT)"
+            )
 
         print("  unmatched_tool")
         unmatched_tool = [i for i in range(n_tool) if i not in matched_tool_idxs]

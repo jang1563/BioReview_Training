@@ -65,10 +65,10 @@ TRUNCATION_MARKER = "\n[…truncated]"
 
 SFT_OUTPUT_SPEC = (
     "OUTPUT FORMAT: Return a JSON array of concern objects, nothing else.\n"
-    "Each item must be: {\"text\": string, \"category\": one of "
+    'Each item must be: {"text": string, "category": one of '
     "[design_flaw, statistical_methodology, missing_experiment, "
     "prior_art_novelty, writing_clarity, reagent_method_specificity, "
-    "interpretation, other], \"severity\": one of [major, minor, optional]}.\n"
+    'interpretation, other], "severity": one of [major, minor, optional]}.\n'
     "Do NOT return a JSON array of strings."
 )
 
@@ -90,7 +90,9 @@ class SplitStats:
 
     def as_dict(self) -> dict:
         token_mean = statistics.mean(self.input_tokens) if self.input_tokens else 0.0
-        token_median = statistics.median(self.input_tokens) if self.input_tokens else 0.0
+        token_median = (
+            statistics.median(self.input_tokens) if self.input_tokens else 0.0
+        )
         token_max = max(self.input_tokens) if self.input_tokens else 0
         concern_mean = (
             statistics.mean(self.concern_count_per_article)
@@ -120,7 +122,9 @@ class SplitStats:
 def build_arg_parser() -> argparse.ArgumentParser:
     here = Path(__file__).resolve()
     workspace_root = here.parents[2]
-    default_splits_dir = workspace_root / "peer-review-benchmark" / "data" / "splits" / "v3"
+    default_splits_dir = (
+        workspace_root / "peer-review-benchmark" / "data" / "splits" / "v3"
+    )
     default_reviewer = (
         workspace_root
         / "peer-review-benchmark"
@@ -228,9 +232,7 @@ def load_reviewer_constants(reviewer_py: Path) -> tuple[str, list[str]]:
     for node in tree.body:
         if not isinstance(node, ast.Assign):
             continue
-        target_names = [
-            t.id for t in node.targets if isinstance(t, ast.Name)
-        ]
+        target_names = [t.id for t in node.targets if isinstance(t, ast.Name)]
         if "REVIEWER_SYSTEM" in target_names:
             try:
                 value = ast.literal_eval(node.value)
@@ -431,9 +433,10 @@ def allocate_section_budgets(
         fractional_parts.append((name, extra_exact - extra_floor))
 
     remainder = max(0, budget_tokens - used)
-    fractional_parts.sort(key=lambda x: x[1], reverse=True)
-    for i in range(remainder):
-        budgets[fractional_parts[i % len(fractional_parts)][0]] += 1
+    if fractional_parts and remainder > 0:
+        fractional_parts.sort(key=lambda x: x[1], reverse=True)
+        for i in range(remainder):
+            budgets[fractional_parts[i % len(fractional_parts)][0]] += 1
 
     return budgets
 
@@ -461,7 +464,9 @@ def build_paper_input(
     abstract = normalize_whitespace(str(entry.get("abstract", "")))
     if abstract and remaining > 0:
         abstract_block = f"## Abstract\n{abstract}"
-        abstract_block = truncate_text_to_tokens(abstract_block, remaining, count_tokens)
+        abstract_block = truncate_text_to_tokens(
+            abstract_block, remaining, count_tokens
+        )
         if abstract_block:
             parts.append(abstract_block)
             remaining -= count_tokens(abstract_block)
@@ -492,7 +497,9 @@ def build_paper_input(
         block = f"## {name.title()}\n{text}"
         blocks.append((name, block, count_tokens(block)))
 
-    budgets = allocate_section_budgets([(name, tok) for name, _, tok in blocks], remaining)
+    budgets = allocate_section_budgets(
+        [(name, tok) for name, _, tok in blocks], remaining
+    )
 
     for name, block, _ in blocks:
         sec_budget = budgets.get(name, 0)
@@ -616,14 +623,22 @@ def to_sharegpt_record(
 
 def validate_jsonl(path: Path) -> tuple[bool, int]:
     lines = 0
+    bad_lines: list[int] = []
     with path.open("r", encoding="utf-8") as f:
-        for line in f:
+        for line_no, line in enumerate(f, 1):
             stripped = line.strip()
             if not stripped:
                 continue
-            json.loads(stripped)
-            lines += 1
-    return True, lines
+            try:
+                json.loads(stripped)
+                lines += 1
+            except json.JSONDecodeError:
+                bad_lines.append(line_no)
+    if bad_lines:
+        print(
+            f"WARNING: {path.name} has {len(bad_lines)} malformed lines: {bad_lines[:5]}"
+        )
+    return len(bad_lines) == 0, lines
 
 
 def process_split(
@@ -786,7 +801,9 @@ def main() -> None:
             preview_n=max(0, args.preview),
             ensure_ascii=not args.keep_nonascii_json,
         )
-        validate_jsonl(output_path)
+        is_valid, line_count = validate_jsonl(output_path)
+        if not is_valid:
+            raise RuntimeError(f"Output {output_path} failed JSONL validation")
         split_summaries.append(stats)
         print_split_summary(stats)
         if args.preview > 0:

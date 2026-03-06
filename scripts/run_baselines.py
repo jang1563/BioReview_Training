@@ -271,7 +271,9 @@ def _pricing_for(provider: str, model: str) -> dict[str, float]:
     return {"input": 1.00, "output": 5.00}
 
 
-def estimate_cost(articles: list[dict], provider: str, model: str, max_input_chars: int) -> dict[str, Any]:
+def estimate_cost(
+    articles: list[dict], provider: str, model: str, max_input_chars: int
+) -> dict[str, Any]:
     total_chars = 0
     for entry in articles:
         article_chars = len(entry.get("title", ""))
@@ -285,7 +287,10 @@ def estimate_cost(articles: list[dict], provider: str, model: str, max_input_cha
     est_input_tokens = int(total_chars / 4)
     est_output_tokens = len(articles) * 1500
     p = _pricing_for(provider, model)
-    est_cost = est_input_tokens * p["input"] / 1_000_000 + est_output_tokens * p["output"] / 1_000_000
+    est_cost = (
+        est_input_tokens * p["input"] / 1_000_000
+        + est_output_tokens * p["output"] / 1_000_000
+    )
     return {
         "n_articles": len(articles),
         "est_input_tokens": est_input_tokens,
@@ -481,6 +486,8 @@ def call_provider_llm(
             system=system,
             messages=[{"role": "user", "content": user}],
         )
+        if not msg.content:
+            raise RuntimeError("Anthropic API returned empty content")
         return msg.content[0].text  # type: ignore[union-attr]
 
     if provider == "openai":
@@ -493,6 +500,8 @@ def call_provider_llm(
                 {"role": "user", "content": user},
             ],
         )
+        if not resp.choices:
+            raise RuntimeError("OpenAI API returned empty choices")
         return resp.choices[0].message.content or ""
 
     mode, google_client = client
@@ -502,7 +511,9 @@ def call_provider_llm(
             "max_output_tokens": max_tokens,
             "system_instruction": system,
         }
-        resp = google_client.models.generate_content(model=model, contents=user, config=config)
+        resp = google_client.models.generate_content(
+            model=model, contents=user, config=config
+        )
         return _google_extract_text(resp)
 
     if mode == "rest":
@@ -533,7 +544,10 @@ def call_provider_llm(
         except urllib.error.URLError as exc:
             raise RuntimeError(f"Gemini REST connection error: {exc}") from exc
 
-        data = json.loads(body)
+        try:
+            data = json.loads(body)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(f"Gemini REST returned invalid JSON: {exc}") from exc
         out: list[str] = []
         for cand in data.get("candidates", []):
             content = cand.get("content", {})
@@ -547,13 +561,18 @@ def call_provider_llm(
         "temperature": temperature,
         "max_output_tokens": max_tokens,
     }
-    model_obj = google_client.GenerativeModel(model_name=model, system_instruction=system)
+    model_obj = google_client.GenerativeModel(
+        model_name=model, system_instruction=system
+    )
     resp = model_obj.generate_content(user, generation_config=generation_config)
     return getattr(resp, "text", "") or _google_extract_text(resp)
 
 
 def build_google_client() -> tuple[str, Any]:
-    api_key = os.getenv("GOOGLE_API_KEY", "").strip() or os.getenv("GEMINI_API_KEY", "").strip()
+    api_key = (
+        os.getenv("GOOGLE_API_KEY", "").strip()
+        or os.getenv("GEMINI_API_KEY", "").strip()
+    )
 
     # Prefer SDKs if available.
     try:
@@ -661,7 +680,9 @@ def run_generation_for_model(
             for row in kept_rows:
                 f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
-    to_process = [a for a in articles if a.get("id", a.get("article_id", "")) not in resume_ids]
+    to_process = [
+        a for a in articles if a.get("id", a.get("article_id", "")) not in resume_ids
+    ]
     skipped = len(articles) - len(to_process)
     stats: dict[str, Any] = {
         "processed": 0,
@@ -674,6 +695,7 @@ def run_generation_for_model(
 
     mode = "a" if resume_ids else "w"
     with output_path.open(mode, encoding="utf-8") as fh:
+
         def _one(entry: dict) -> tuple[str, list[str] | None, str | None]:
             art_id = entry.get("id", entry.get("article_id", ""))
             try:
@@ -681,7 +703,11 @@ def run_generation_for_model(
                 if not user.strip():
                     if allow_empty_concerns:
                         return art_id, [], None
-                    return art_id, None, "EmptyInput: paper text empty after formatting."
+                    return (
+                        art_id,
+                        None,
+                        "EmptyInput: paper text empty after formatting.",
+                    )
                 raw = call_provider_llm(
                     provider=spec.provider,
                     client=client,
@@ -694,14 +720,18 @@ def run_generation_for_model(
                 concerns = parse_concerns(raw)
                 if not concerns and not allow_empty_concerns:
                     preview = re.sub(r"\s+", " ", raw).strip()[:240]
-                    return art_id, None, f"EmptyConcerns: no parseable concerns. raw_preview={preview!r}"
+                    return (
+                        art_id,
+                        None,
+                        f"EmptyConcerns: no parseable concerns. raw_preview={preview!r}",
+                    )
                 return art_id, concerns, None
             except Exception as exc:
                 return art_id, None, f"{type(exc).__name__}: {exc}"
 
         with ThreadPoolExecutor(max_workers=concurrency) as ex:
             futures = {ex.submit(_one, e): e for e in to_process}
-            for fut in as_completed(futures):
+            for fut in as_completed(futures, timeout=600):
                 art_id, concerns, err = fut.result()
                 if concerns is None:
                     stats["failed"] += 1
@@ -710,9 +740,10 @@ def run_generation_for_model(
                     continue
                 row = {"article_id": art_id, "concerns": concerns}
                 fh.write(json.dumps(row, ensure_ascii=False) + "\n")
-                fh.flush()
                 stats["processed"] += 1
                 stats["total_concerns"] += len(concerns)
+                if stats["processed"] % 20 == 0:
+                    fh.flush()
 
     return stats
 
