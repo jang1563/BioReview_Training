@@ -1,0 +1,31 @@
+{
+  "split": "train",
+  "total_articles": 4563,
+  "kept_articles": 839,
+  "dropped_too_few_concerns": 3717,
+  "dropped_title_only": 7,
+  "skipped_bad_json": 0,
+  "concerns_before": 66574,
+  "concerns_after": 5908,
+  "avg_concerns_per_article": 6.4815256257449345,
+  "input_tokens": {
+    "mean": 14559.618593563766,
+    "median": 15000,
+    "max": 15000
+  },
+  "category_distribution": {
+    "design_flaw": 816,
+    "interpretation": 1192,
+    "statistical_methodology": 313,
+    "writing_clarity": 812,
+    "reagent_method_specificity": 193,
+    "missing_experiment": 1778,
+    "prior_art_novelty": 326,
+    "other": 8
+  },
+  "severity_distribution": {
+    "major": 4470,
+    "minor": 887,
+    "optional": 81
+  }
+}

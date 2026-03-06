@@ -1,0 +1,37 @@
+# Large model files
+models/
+
+# Training data (hosted on HuggingFace)
+data/sft_train.jsonl
+data/sft_val.jsonl
+data/sweeps/
+
+# Generated baseline outputs
+results/baseline_eval/
+results/baselines/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Environment
+.env
+*.env
+.venv/
+venv/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDE
+.vscode/
+.idea/
