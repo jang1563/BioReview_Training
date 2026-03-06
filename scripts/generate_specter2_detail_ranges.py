@@ -15,11 +15,17 @@ from typing import Any
 def load_jsonl(path: Path) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     with path.open(encoding="utf-8") as f:
-        for line in f:
+        for lineno, line in enumerate(f, 1):
             line = line.strip()
             if not line:
                 continue
-            rows.append(json.loads(line))
+            try:
+                rows.append(json.loads(line))
+            except json.JSONDecodeError as exc:
+                print(
+                    f"[warn] malformed JSON at {path}:{lineno}: {exc}",
+                    file=sys.stderr,
+                )
     return rows
 
 
