@@ -10,6 +10,12 @@ data/sweeps/
 results/baseline_eval/
 results/baselines/
 
+# SLURM logs
+logs/
+
+# SFT evaluation results (generated)
+results/sft_eval/
+
 # Python
 __pycache__/
 *.pyc
