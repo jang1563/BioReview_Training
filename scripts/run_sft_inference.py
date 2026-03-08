@@ -34,6 +34,8 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+import yaml
+
 
 # ---------------------------------------------------------------------------
 # JSON output parsing
@@ -291,6 +293,7 @@ def build_inference_prompt(
     token_budget: int,
     section_priority: list[str],
     count_tokens,
+    enable_thinking: bool = True,
 ) -> str:
     """Build formatted inference prompt for a single article."""
     from prepare_sft_data import USER_PREFIX, build_paper_input
@@ -311,9 +314,11 @@ def build_inference_prompt(
         {"role": "user", "content": user_message},
     ]
 
-    return tokenizer.apply_chat_template(
-        messages, tokenize=False, add_generation_prompt=True
-    )
+    chat_kwargs = {"tokenize": False, "add_generation_prompt": True}
+    if not enable_thinking:
+        chat_kwargs["enable_thinking"] = False
+
+    return tokenizer.apply_chat_template(messages, **chat_kwargs)
 
 
 # ---------------------------------------------------------------------------
@@ -606,6 +611,16 @@ def main() -> None:
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
+    # ── Read enable_thinking from training config ──────────────
+    enable_thinking = True
+    training_config_path = model_dir / "training_config.yaml"
+    if training_config_path.exists():
+        with training_config_path.open(encoding="utf-8") as f:
+            tcfg = yaml.safe_load(f)
+        enable_thinking = tcfg.get("model", {}).get("enable_thinking", True)
+        if not enable_thinking:
+            print(f"enable_thinking: False (from training config)")
+
     # ── Load system prompt and token counter ────────────────────
     system_prompt = get_system_prompt(project_root)
     count_tokens, token_backend = get_token_counter()
@@ -670,6 +685,7 @@ def main() -> None:
                     token_budget=args.token_budget,
                     section_priority=section_priority,
                     count_tokens=count_tokens,
+                    enable_thinking=enable_thinking,
                 )
 
                 raw_output = generate_one(

@@ -11,9 +11,17 @@
 #   PEFT+bitsandbytes: ~20-24GB → A40 (48GB) sufficient
 #
 # Usage:
-#   sbatch slurm/train_sft.sh                     # full training (3 epochs)
-#   sbatch slurm/train_sft.sh --export=MAX_STEPS=50  # quick test
-#   sbatch slurm/train_sft.sh --export=GPU_TYPE=a100  # use A100
+#   sbatch slurm/train_sft.sh                                     # full training (3 epochs)
+#   sbatch slurm/train_sft.sh --export=MAX_STEPS=50               # quick test
+#   sbatch slurm/train_sft.sh --export=RESUME=1                   # resume from latest checkpoint
+#   sbatch slurm/train_sft.sh --export=RESUME=models/qwen7b_bioreview_v1/checkpoint-300  # specific checkpoint
+#   sbatch --gres=gpu:a100:1 --mem=80G slurm/train_sft.sh         # use A100 instead
+#
+# Note: Config uses save_strategy="epoch" (3 epochs, ~2h each on A40).
+# If training is slower than expected, consider:
+#   - Increase wall time: sbatch --time=12:00:00 slurm/train_sft.sh
+#   - Or change config save_strategy to "steps" with save_steps=100
+#   - Resume interrupted training: sbatch --export=RESUME=1 slurm/train_sft.sh
 #
 # Interactive debug (1h):
 #   srun -p scu-gpu --gres=gpu:a40:1 --mem=48G --time=01:00:00 --pty bash
@@ -37,11 +45,11 @@ PROJECT_DIR="${SCRATCH_DIR}/BioReview_Training"
 CONFIG="${CONFIG:-configs/qwen7b_qlora.yaml}"
 MAX_STEPS="${MAX_STEPS:--1}"
 DRY_RUN="${DRY_RUN:-false}"
-GPU_TYPE="${GPU_TYPE:-a40}"
+NO_EVAL="${NO_EVAL:-true}"
+RESUME="${RESUME:-}"
 
-# HuggingFace cache → scratch (avoid filling home dir)
-export HF_HOME="${SCRATCH_DIR}/cache/huggingface"
-export TRANSFORMERS_CACHE="${SCRATCH_DIR}/cache/transformers"
+# HuggingFace cache → scratch (must match ~/.bashrc HF_HOME)
+export HF_HOME="${SCRATCH_DIR}/huggingface"
 export TORCH_HOME="${SCRATCH_DIR}/cache/torch"
 
 echo "============================================================"
@@ -49,10 +57,11 @@ echo "BioReview SFT Training — Cayuga"
 echo "============================================================"
 echo "Job ID:       ${SLURM_JOB_ID}"
 echo "Node:         ${SLURMD_NODENAME}"
-echo "GPU type:     ${GPU_TYPE}"
 echo "Config:       ${CONFIG}"
 echo "Max steps:    ${MAX_STEPS}"
 echo "Dry run:      ${DRY_RUN}"
+echo "No eval:      ${NO_EVAL}"
+echo "Resume:       ${RESUME:-no}"
 echo "Start time:   $(date)"
 echo "============================================================"
 
@@ -64,7 +73,7 @@ conda activate "${CONDA_ENV}" \
 cd "${PROJECT_DIR}" \
     || { echo "ERROR: project dir not found: ${PROJECT_DIR}. Run sync_to_hpc.sh first."; exit 1; }
 
-mkdir -p "${HF_HOME}" "${TRANSFORMERS_CACHE}" "${TORCH_HOME}" logs
+mkdir -p "${HF_HOME}" "${TORCH_HOME}" logs
 
 # ── GPU verification ───────────────────────────────────────────────────────
 echo ""
@@ -95,6 +104,27 @@ for f in data/sft_train.jsonl data/sft_val.jsonl "${CONFIG}"; do
     fi
 done
 
+# Quick JSONL integrity check (parse first + last line)
+for f in data/sft_train.jsonl data/sft_val.jsonl; do
+    python -c "
+import json, sys
+with open('$f') as fh:
+    first = fh.readline()
+    json.loads(first)
+    last = first
+    for last in fh: pass
+    json.loads(last)
+print(f'  JSONL OK: $f')
+" || { echo "ERROR: Malformed JSONL: $f"; exit 1; }
+done
+
+# ── Disk space check ────────────────────────────────────────────────────
+avail_gb=$(df -BG "${PROJECT_DIR}" 2>/dev/null | tail -1 | awk '{gsub(/G/,""); print $4}')
+if [ -n "${avail_gb}" ] && [ "${avail_gb}" -lt 30 ]; then
+    echo ""
+    echo "WARNING: Only ${avail_gb}GB available. Training may need ~20GB for model + checkpoints."
+fi
+
 # ── Build training command ─────────────────────────────────────────────────
 CMD="python scripts/train_sft.py --config ${CONFIG}"
 
@@ -104,6 +134,28 @@ fi
 
 if [ "${DRY_RUN}" = "true" ]; then
     CMD="${CMD} --dry-run"
+fi
+
+if [ "${NO_EVAL}" = "true" ]; then
+    CMD="${CMD} --no-eval"
+fi
+
+if [ -n "${RESUME}" ]; then
+    if [ -d "${RESUME}" ]; then
+        # User provided explicit checkpoint path
+        echo "Resuming from: ${RESUME}"
+        CMD="${CMD} --resume ${RESUME}"
+    else
+        # Auto-detect latest checkpoint from config output_dir
+        OUTPUT_DIR=$(python -c "import yaml; cfg=yaml.safe_load(open('${CONFIG}')); print(cfg.get('output',{}).get('dir','models/output'))")
+        LATEST_CKPT=$(ls -td "${OUTPUT_DIR}"/checkpoint-* 2>/dev/null | head -1)
+        if [ -n "${LATEST_CKPT}" ]; then
+            echo "Resuming from latest checkpoint: ${LATEST_CKPT}"
+            CMD="${CMD} --resume ${LATEST_CKPT}"
+        else
+            echo "WARNING: No checkpoints found in ${OUTPUT_DIR}/, starting fresh."
+        fi
+    fi
 fi
 
 echo ""
@@ -118,10 +170,11 @@ echo ""
 echo "============================================================"
 if [ ${EXIT_CODE} -eq 0 ]; then
     echo "Training completed successfully!"
-    echo "Model saved to: ${PROJECT_DIR}/models/qwen7b_bioreview_v1/"
-    # Show model size
-    if [ -d "models/qwen7b_bioreview_v1" ]; then
-        echo "Model size: $(du -sh models/qwen7b_bioreview_v1 | cut -f1)"
+    # Extract output dir from config
+    MODEL_OUTPUT_DIR=$(python -c "import yaml; cfg=yaml.safe_load(open('${CONFIG}')); print(cfg.get('output',{}).get('dir','models/output'))")
+    echo "Model saved to: ${PROJECT_DIR}/${MODEL_OUTPUT_DIR}/"
+    if [ -d "${MODEL_OUTPUT_DIR}" ]; then
+        echo "Model size: $(du -sh ${MODEL_OUTPUT_DIR} | cut -f1)"
     fi
 else
     echo "Training FAILED with exit code ${EXIT_CODE}"

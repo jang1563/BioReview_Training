@@ -26,6 +26,35 @@ import yaml
 
 ROLE_MAP = {"system": "system", "human": "user", "gpt": "assistant"}
 
+CHAT_TEMPLATES = {
+    "chatml": {
+        "instruction_template": "<|im_start|>user\n",
+        "response_template": "<|im_start|>assistant\n",
+    },
+    "deepseek": {
+        "instruction_template": "<\uff5cUser\uff5c>",
+        "response_template": "<\uff5cAssistant\uff5c>",
+    },
+}
+
+
+def detect_chat_template_family(tokenizer) -> str:
+    """Auto-detect chat template family from tokenizer output."""
+    test_messages = [
+        {"role": "user", "content": "X"},
+        {"role": "assistant", "content": "Y"},
+    ]
+    formatted = tokenizer.apply_chat_template(
+        test_messages, tokenize=False, add_generation_prompt=False
+    )
+    if "<|im_start|>" in formatted:
+        return "chatml"
+    if "\uff5cUser\uff5c" in formatted:
+        return "deepseek"
+    raise ValueError(
+        f"Unknown chat template. Sample output:\n{formatted[:300]}"
+    )
+
 
 def load_config(path: Path) -> dict:
     with path.open(encoding="utf-8") as f:
@@ -75,6 +104,11 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=None,
         help="Resume training from a checkpoint directory.",
+    )
+    p.add_argument(
+        "--no-eval",
+        action="store_true",
+        help="Skip evaluation during training (avoids eval OOM on large vocab models).",
     )
     p.add_argument(
         "--no-response-only",
@@ -219,9 +253,10 @@ def main() -> None:
 
     def format_example(example: dict) -> dict:
         messages = sharegpt_to_messages(example["conversations"])
-        text = tokenizer.apply_chat_template(
-            messages, tokenize=False, add_generation_prompt=False
-        )
+        chat_kwargs = {"tokenize": False, "add_generation_prompt": False}
+        if mcfg.get("enable_thinking") is False:
+            chat_kwargs["enable_thinking"] = False
+        text = tokenizer.apply_chat_template(messages, **chat_kwargs)
         return {"text": text}
 
     train_ds = Dataset.from_list(raw_train).map(format_example)
@@ -282,19 +317,28 @@ def main() -> None:
         max_seq_length=mcfg["max_seq_length"],
         dataset_text_field="text",
         packing=False,
-        eval_strategy="steps" if max_steps > 0 else "epoch",
+        eval_strategy="no"
+        if args.no_eval
+        else ("steps" if max_steps > 0 else "epoch"),
         eval_steps=max(1, max_steps // 2) if max_steps > 0 else None,
+        per_device_eval_batch_size=1,
         report_to="none",
     )
 
     # ── Build data collator for response-only loss masking ─────
     data_collator = None
+    template_family = mcfg.get("chat_template") or detect_chat_template_family(
+        tokenizer
+    )
+    templates = CHAT_TEMPLATES[template_family]
+    print(f"chat template: {template_family}")
+
     if not args.no_response_only and not use_unsloth:
         try:
             from trl import DataCollatorForCompletionOnlyLM
 
-            response_template = "<|im_start|>assistant\n"
-            instruction_template = "<|im_start|>user\n"
+            response_template = templates["response_template"]
+            instruction_template = templates["instruction_template"]
             data_collator = DataCollatorForCompletionOnlyLM(
                 response_template=response_template,
                 instruction_template=instruction_template,
@@ -353,8 +397,8 @@ def main() -> None:
 
                 trainer = train_on_responses_only(
                     trainer,
-                    instruction_part="<|im_start|>user\n",
-                    response_part="<|im_start|>assistant\n",
+                    instruction_part=templates["instruction_template"],
+                    response_part=templates["response_template"],
                 )
                 print("loss masking: unsloth train_on_responses_only")
             except Exception as exc:

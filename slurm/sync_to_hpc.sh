@@ -19,7 +19,7 @@ set -euo pipefail
 
 # ── Configuration ──────────────────────────────────────────────────────────
 CAYUGA_USER="jak4013"
-CAYUGA_HOST="cayuga.cac.cornell.edu"
+CAYUGA_HOST="cayuga-login1.cac.cornell.edu"
 REMOTE_BASE="/athena/masonlab/scratch/users/${CAYUGA_USER}/BioReview_Training"
 LOCAL_BASE="$(cd "$(dirname "$0")/.." && pwd)"
 
@@ -47,6 +47,9 @@ if [ "${DOWNLOAD}" = true ]; then
     echo "Downloading results from Cayuga"
     echo "============================================================"
 
+    # Create local directories (may be gitignored and absent)
+    mkdir -p "${LOCAL_BASE}/models" "${LOCAL_BASE}/results/sft_eval" "${LOCAL_BASE}/logs"
+
     echo ""
     echo "[1/3] Downloading trained model..."
     rsync ${RSYNC_OPTS} ${DRY_RUN} \
@@ -61,7 +64,6 @@ if [ "${DOWNLOAD}" = true ]; then
 
     echo ""
     echo "[3/3] Downloading logs..."
-    mkdir -p "${LOCAL_BASE}/logs"
     rsync ${RSYNC_OPTS} ${DRY_RUN} \
         "${REMOTE}:${REMOTE_BASE}/logs/" \
         "${LOCAL_BASE}/logs/"
@@ -117,19 +119,23 @@ else
     echo ""
     echo "[4/4] Uploading peer-review-benchmark (for evaluation)..."
     if [ -d "${LOCAL_BENCH}" ]; then
-        ssh ${REMOTE} "mkdir -p ${REMOTE_BENCH}"
-        # Only sync evaluation essentials (not the full repo)
+        ssh ${REMOTE} "mkdir -p ${REMOTE_BENCH}/{bioreview_bench,data/splits/v3}"
+
+        # bioreview_bench package (imported via sys.path in inference script)
+        echo "  Syncing bioreview_bench package..."
         rsync ${RSYNC_OPTS} ${DRY_RUN} \
-            --include="bioreview_bench/" \
-            --include="bioreview_bench/***" \
-            --include="data/" \
-            --include="data/splits/" \
-            --include="data/splits/***" \
-            --include="setup.py" \
-            --include="setup.cfg" \
-            --include="pyproject.toml" \
-            --exclude="*" \
-            "${LOCAL_BENCH}/" "${REMOTE}:${REMOTE_BENCH}/"
+            --exclude="__pycache__" --exclude="*.pyc" \
+            "${LOCAL_BENCH}/bioreview_bench/" "${REMOTE}:${REMOTE_BENCH}/bioreview_bench/"
+
+        # pyproject.toml (metadata; pip install not used — requires Python >=3.12)
+        rsync ${RSYNC_OPTS} ${DRY_RUN} \
+            "${LOCAL_BENCH}/pyproject.toml" "${REMOTE}:${REMOTE_BENCH}/"
+
+        # v3 splits: val + test only (skip 512MB train.jsonl — not needed for eval)
+        echo "  Syncing v3 evaluation splits (val + test)..."
+        rsync ${RSYNC_OPTS} ${DRY_RUN} \
+            --exclude="train.jsonl" \
+            "${LOCAL_BENCH}/data/splits/v3/" "${REMOTE}:${REMOTE_BENCH}/data/splits/v3/"
     else
         echo "  peer-review-benchmark not found at ${LOCAL_BENCH}, skipping."
         echo "  Evaluation will not be available on HPC."

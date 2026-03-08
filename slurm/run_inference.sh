@@ -5,9 +5,10 @@
 # Requires: trained model in models/qwen7b_bioreview_v1/
 #
 # Usage:
-#   sbatch slurm/run_inference.sh                          # full val set
-#   sbatch slurm/run_inference.sh --export=MAX_ARTICLES=5  # quick test
-#   sbatch slurm/run_inference.sh --export=SPLIT=test      # test set
+#   sbatch slurm/run_inference.sh                                  # full val set
+#   sbatch slurm/run_inference.sh --export=MAX_ARTICLES=5          # quick test
+#   sbatch slurm/run_inference.sh --export=SPLIT=test              # test set
+#   sbatch --gres=gpu:a100:1 --mem=80G slurm/run_inference.sh     # use A100 instead
 #
 # Interactive debug:
 #   srun -p scu-gpu --gres=gpu:a40:1 --mem=48G --time=01:00:00 --pty bash
@@ -33,9 +34,8 @@ SPLIT="${SPLIT:-val}"
 MAX_ARTICLES="${MAX_ARTICLES:-0}"
 EVALUATE="${EVALUATE:-true}"
 
-# HuggingFace cache → scratch
-export HF_HOME="${SCRATCH_DIR}/cache/huggingface"
-export TRANSFORMERS_CACHE="${SCRATCH_DIR}/cache/transformers"
+# HuggingFace cache → scratch (must match ~/.bashrc HF_HOME)
+export HF_HOME="${SCRATCH_DIR}/huggingface"
 export TORCH_HOME="${SCRATCH_DIR}/cache/torch"
 
 echo "============================================================"
@@ -81,16 +81,28 @@ echo ""
 BENCH_DIR="${SCRATCH_DIR}/peer-review-benchmark"
 SPLITS_DIR="${BENCH_DIR}/data/splits/v3"
 
+# Splits are required for both inference (article loading) and evaluation
+if [ ! -d "${SPLITS_DIR}" ]; then
+    echo "ERROR: peer-review-benchmark splits not found at ${SPLITS_DIR}"
+    echo "  Inference requires split files to load articles."
+    echo "  To fix: bash slurm/sync_to_hpc.sh (from local machine)"
+    exit 1
+fi
+
+if [ ! -f "${SPLITS_DIR}/${SPLIT}.jsonl" ]; then
+    echo "ERROR: Split file not found: ${SPLITS_DIR}/${SPLIT}.jsonl"
+    echo "  Available splits:"
+    ls "${SPLITS_DIR}"/*.jsonl 2>/dev/null | while read f; do
+        echo "    $(basename "$f" .jsonl) ($(wc -l < "$f") lines)"
+    done
+    exit 1
+fi
+
+echo "Splits dir: ${SPLITS_DIR}"
+echo "Split file: ${SPLITS_DIR}/${SPLIT}.jsonl ($(wc -l < "${SPLITS_DIR}/${SPLIT}.jsonl") lines)"
+
 if [ "${EVALUATE}" = "true" ]; then
-    if [ ! -d "${SPLITS_DIR}" ]; then
-        echo "WARNING: peer-review-benchmark splits not found at ${SPLITS_DIR}"
-        echo "  Evaluation will be skipped."
-        echo "  To fix: sync peer-review-benchmark to ${BENCH_DIR}"
-        EVALUATE="false"
-    else
-        echo "Splits dir: ${SPLITS_DIR}"
-        echo "Split file: ${SPLITS_DIR}/${SPLIT}.jsonl ($(wc -l < "${SPLITS_DIR}/${SPLIT}.jsonl" 2>/dev/null || echo '?') lines)"
-    fi
+    echo "Evaluation: enabled"
 fi
 
 # ── Build inference command ────────────────────────────────────────────────
