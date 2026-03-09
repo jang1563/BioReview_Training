@@ -75,7 +75,8 @@ echo ""
 echo "[Step 6/10] Installing evaluation dependencies..."
 pip install \
     "sentence-transformers>=2.2.0" \
-    "scipy>=1.10.0"
+    "scipy>=1.10.0" \
+    "pydantic>=2.0.0"
 
 # ── Step 7: Install Unsloth (recommended for 2-5x faster training) ──
 echo ""
