@@ -45,13 +45,44 @@ def summarize_jsonl(path: Path) -> dict:
     }
 
 
+def infer_base_summary(jsonl_path: Path) -> tuple[Path | None, dict | None]:
+    """Try to find a related summary for post-processed variants."""
+    stem = jsonl_path.stem
+    for suffix in ("_deduped",):
+        if suffix in stem:
+            base_stem = stem.replace(suffix, "")
+            base_summary = jsonl_path.with_name(base_stem + ".summary.json")
+            if base_summary.exists():
+                return base_summary, json.loads(base_summary.read_text(encoding="utf-8"))
+    return None, None
+
+
 def refresh_summary(jsonl_path: Path, dry_run: bool = False) -> None:
     summary_path = jsonl_path.with_suffix(".summary.json")
-    if not summary_path.exists():
-        print(f"SKIP {jsonl_path.name}: summary not found")
-        return
+    base_summary_path, base_summary = infer_base_summary(jsonl_path)
+    if summary_path.exists():
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    elif base_summary is not None:
+        summary = {
+            "generated_at_utc": datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"),
+            "model_dir": base_summary.get("model_dir", ""),
+            "engine": base_summary.get("engine", "unknown"),
+            "split": base_summary.get("split", "val"),
+            "temperature": base_summary.get("temperature"),
+            "max_new_tokens": base_summary.get("max_new_tokens"),
+            "source_variant_of": base_summary_path.name,
+            "postprocess": "deduped output derived from base inference JSONL",
+            "eval_status": "not_run_for_this_variant",
+        }
+    else:
+        summary = {
+            "generated_at_utc": datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"),
+            "model_dir": jsonl_path.stem,
+            "engine": "unknown",
+            "split": "unknown",
+            "eval_status": "not_run_for_this_variant",
+        }
 
-    summary = json.loads(summary_path.read_text(encoding="utf-8"))
     fresh = summarize_jsonl(jsonl_path)
 
     updated = dict(summary)
@@ -62,7 +93,7 @@ def refresh_summary(jsonl_path: Path, dry_run: bool = False) -> None:
     updated["summary_refreshed_from_jsonl"] = jsonl_path.name
 
     changed = any(summary.get(k) != v for k, v in fresh.items())
-    status = "UPDATE" if changed else "OK"
+    status = "CREATE" if not summary_path.exists() else ("UPDATE" if changed else "OK")
     print(
         f"{status} {jsonl_path.name}: processed={fresh['processed']} "
         f"failed_parse={fresh['failed_parse']} total_concerns={fresh['total_concerns']}"
