@@ -67,7 +67,7 @@ echo "============================================================"
 
 # ── Environment setup ──────────────────────────────────────────────────────
 # Source conda directly (bashrc may skip non-interactive shells)
-CONDA_BASE="/home/fs01/jak4013/miniconda3/miniconda3"
+CONDA_BASE="${CONDA_BASE:-/home/fs01/jak4013/miniconda3/miniconda3}"
 source "${CONDA_BASE}/etc/profile.d/conda.sh" \
     || { echo "ERROR: conda not found at ${CONDA_BASE}"; exit 1; }
 conda activate "${CONDA_ENV}" \

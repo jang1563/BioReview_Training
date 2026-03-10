@@ -27,9 +27,7 @@ Fine-tunes open-source LLMs to identify specific scientific concerns in biomedic
 BioReview_Training/
 ├── configs/                   # Training configurations
 │   ├── qwen3.5_9b_qlora.yaml       # Qwen3.5-9B QLoRA (A100 80G — A40 OOM at seq=16384)
-│   ├── qwen3.5_9b_qlora_v2.yaml    # v2 (updated system prompt + training data)
 │   ├── qwen2.5_14b_qlora.yaml      # Qwen2.5-14B QLoRA (A100 80G)
-│   ├── qwen2.5_14b_qlora_v2.yaml
 │   ├── deepseek_r1_14b_qlora.yaml  # DeepSeek-R1-14B QLoRA (A100 80G)
 │   └── sweep/                      # Hyperparameter sweep configs
 │       ├── stage1_9b.yaml / stage1_14b.yaml
@@ -113,12 +111,12 @@ bash slurm/sync_to_hpc.sh
 # Submit training (use A100 for all models — A40 OOM at max_seq_length=16384)
 /opt/ohpc/pub/software/slurm/24.05.2/bin/sbatch \
     --gres=gpu:a100:1 --mem=80G \
-    --export=ALL,CONFIG=configs/qwen2.5_14b_qlora_v2.yaml \
+    --export=ALL,CONFIG=configs/qwen2.5_14b_qlora.yaml \
     slurm/train_sft.sh
 
 /opt/ohpc/pub/software/slurm/24.05.2/bin/sbatch \
     --gres=gpu:a100:1 --mem=80G \
-    --export=ALL,CONFIG=configs/qwen3.5_9b_qlora_v2.yaml,PYTORCH_ALLOC_CONF=expandable_segments:True \
+    --export=ALL,CONFIG=configs/qwen3.5_9b_qlora.yaml,PYTORCH_ALLOC_CONF=expandable_segments:True \
     slurm/train_sft.sh
 ```
 
@@ -129,7 +127,7 @@ bash slurm/sync_to_hpc.sh
 ```bash
 # Submit inference (on HPC)
 /opt/ohpc/pub/software/slurm/24.05.2/bin/sbatch \
-    --export=ALL,MODEL_DIR=models/qwen2.5_14b_bioreview_v2,SPLIT=val \
+    --export=ALL,MODEL_DIR=models/qwen2.5_14b_bioreview_v1,SPLIT=val \
     slurm/run_inference.sh
 
 # Resume interrupted inference
@@ -142,8 +140,8 @@ bash slurm/sync_to_hpc.sh
 bash slurm/sync_to_hpc.sh --download
 
 python scripts/compare_models.py \
-    results/sft_eval/qwen3.5_9b_bioreview_v1_val.jsonl \
-    results/sft_eval/qwen2.5_14b_bioreview_v1_val.jsonl
+    results/sft_eval/qwen3.5_9b_bioreview_v1_val.summary.json \
+    results/sft_eval/qwen2.5_14b_bioreview_v1_val.summary.json
 ```
 
 ### 5. Ensemble
@@ -158,6 +156,14 @@ python scripts/ensemble_concerns.py \
 
 # If --evaluate was run without SPECTER2 (gave wrong metrics), re-run:
 python scripts/reevaluate_ensemble.py  # on HPC where SPECTER2 is accessible
+```
+
+### 6. Baselines
+
+`scripts/run_baselines.py` needs provider SDKs in addition to the training stack:
+
+```bash
+pip install openai anthropic google-generativeai
 ```
 
 ---
@@ -181,6 +187,8 @@ Improvements: 10–15 concerns (was 5–15), anti-repetition rule, full v3 split
 |-------|-----|--------|
 | Qwen2.5-14B-v2 | 2701664 | **COMPLETED** (342 min), inference running (2701821) |
 | Qwen3.5-9B-v2 | 2701820 | RUNNING on A100 (~12h total) |
+
+> These v2 job statuses refer to external HPC runs and the corresponding model directories/configs are not checked into this repository snapshot.
 
 ---
 
@@ -275,7 +283,7 @@ python scripts/sweep_manager.py show-results
 | `scripts/prepare_sft_data.py` | Data preprocessing; `--min-resolution-confidence` / `--min-concerns` |
 | `scripts/train_sft.py` | Training; auto-detects Unsloth vs standard PEFT |
 | `scripts/run_sft_inference.py` | Inference with `--tag` suffix, `--resume`, per-article logging |
-| `scripts/compare_models.py` | F1/R/P table from multiple JSONL summary files |
+| `scripts/compare_models.py` | F1/R/P table from a summary directory or explicit `.summary.json` / `.jsonl` paths |
 | `scripts/ensemble_concerns.py` | union / intersection / vote-k ensemble; requires SPECTER2 for `--evaluate` |
 | `scripts/reevaluate_ensemble.py` | Re-run ensemble evaluation with SPECTER2 (use when original eval used Jaccard) |
 | `scripts/error_analysis.py` | HPC mode (SPECTER2) + local mode (pre-computed JSON) |

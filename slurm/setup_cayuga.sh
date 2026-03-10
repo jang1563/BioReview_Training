@@ -7,7 +7,7 @@
 #   bash slurm/setup_cayuga.sh
 #
 # Prerequisites:
-#   - Miniconda installed at /athena/masonlab/scratch/users/jak4013/miniconda3
+#   - Miniconda installed and activatable via `conda`
 #   - Cayuga VPN connected
 #
 # After setup, submit training:
@@ -20,10 +20,12 @@ CONDA_ENV="bioreview-sft"
 PYTHON_VERSION="3.11"
 SCRATCH_DIR="/athena/masonlab/scratch/users/jak4013"
 PROJECT_DIR="${SCRATCH_DIR}/BioReview_Training"
+CONDA_BASE="${CONDA_BASE:-$(conda info --base 2>/dev/null || true)}"
 
 echo "============================================================"
 echo "BioReview SFT Environment Setup — Cayuga"
 echo "============================================================"
+echo "conda_base=${CONDA_BASE:-'(from PATH)'}"
 
 # ── Step 1: Create conda environment ─────────────────────────
 echo ""
@@ -76,7 +78,10 @@ echo "[Step 6/10] Installing evaluation dependencies..."
 pip install \
     "sentence-transformers>=2.2.0" \
     "scipy>=1.10.0" \
-    "pydantic>=2.0.0"
+    "pydantic>=2.0.0" \
+    "openai>=1.0.0" \
+    "anthropic>=0.34.0" \
+    "google-generativeai>=0.8.0"
 
 # ── Step 7: Install Unsloth (recommended for 2-5x faster training) ──
 echo ""

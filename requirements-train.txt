@@ -25,3 +25,9 @@ tiktoken>=0.7.0
 # Evaluation (from peer-review-benchmark)
 sentence-transformers>=2.2.0
 scipy>=1.10.0
+pydantic>=2.0.0
+
+# Optional baseline providers
+openai>=1.0.0
+anthropic>=0.34.0
+google-generativeai>=0.8.0

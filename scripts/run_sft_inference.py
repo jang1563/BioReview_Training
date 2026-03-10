@@ -233,11 +233,17 @@ def load_model_hf(model_dir: Path, load_in_4bit: bool):
     else:
         # Merged full model
         tokenizer = AutoTokenizer.from_pretrained(str(model_dir))
-        model = AutoModelForCausalLM.from_pretrained(
-            str(model_dir),
-            device_map="auto",
-            torch_dtype="auto",
-        )
+        load_kwargs = {"device_map": "auto", "torch_dtype": "auto"}
+        if load_in_4bit:
+            from transformers import BitsAndBytesConfig
+
+            load_kwargs["quantization_config"] = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_quant_type="nf4",
+                bnb_4bit_compute_dtype=torch.bfloat16,
+                bnb_4bit_use_double_quant=True,
+            )
+        model = AutoModelForCausalLM.from_pretrained(str(model_dir), **load_kwargs)
 
     model.eval()
     return model, tokenizer
@@ -405,6 +411,35 @@ def load_split_articles(path: Path) -> list[dict]:
             except json.JSONDecodeError:
                 continue
     return rows
+
+
+def load_existing_output(path: Path) -> tuple[list[dict], dict]:
+    """Load existing inference JSONL and summarize current on-disk state."""
+    rows: list[dict] = []
+    stats = {
+        "processed": 0,
+        "failed_parse": 0,
+        "total_concerns": 0,
+        "total_time": 0.0,
+    }
+
+    with path.open(encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            rows.append(row)
+            stats["processed"] += 1
+            stats["total_concerns"] += len(row.get("concerns", []))
+            stats["total_time"] += float(row.get("generation_time_s", 0.0) or 0.0)
+            if not row.get("parse_ok", False):
+                stats["failed_parse"] += 1
+
+    return rows, stats
 
 
 # ---------------------------------------------------------------------------
@@ -676,20 +711,43 @@ def main() -> None:
 
     # ── Resume support ──────────────────────────────────────────
     done_ids: set[str] = set()
+    existing_stats = {
+        "processed": 0,
+        "failed_parse": 0,
+        "total_concerns": 0,
+        "total_time": 0.0,
+    }
     if args.resume and output_path.exists():
-        with output_path.open(encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    row = json.loads(line)
-                    art_id = row.get("article_id", "")
-                    if art_id and row.get("parse_ok", False):
-                        done_ids.add(art_id)
-                except json.JSONDecodeError:
-                    continue
-        print(f"Resuming: {len(done_ids)} articles already processed")
+        existing_rows, existing_stats = load_existing_output(output_path)
+        kept_rows = []
+        for row in existing_rows:
+            art_id = row.get("article_id", "")
+            if art_id and row.get("parse_ok", False):
+                done_ids.add(art_id)
+                kept_rows.append(row)
+
+        # Drop failed rows before appending so retries do not create duplicates.
+        if len(kept_rows) != len(existing_rows):
+            with output_path.open("w", encoding="utf-8") as f:
+                for row in kept_rows:
+                    f.write(json.dumps(row, ensure_ascii=False) + "\n")
+            existing_stats = {
+                "processed": len(kept_rows),
+                "failed_parse": 0,
+                "total_concerns": sum(len(r.get("concerns", [])) for r in kept_rows),
+                "total_time": sum(
+                    float(r.get("generation_time_s", 0.0) or 0.0) for r in kept_rows
+                ),
+            }
+
+        print(
+            f"Resuming: {len(done_ids)} successful articles already present"
+            + (
+                f", dropped {len(existing_rows) - len(kept_rows)} failed rows for retry"
+                if len(kept_rows) != len(existing_rows)
+                else ""
+            )
+        )
 
     to_process = [
         a for a in usable if a.get("id", a.get("article_id", "")) not in done_ids
@@ -708,12 +766,7 @@ def main() -> None:
                 with open(output_path, "a", encoding="utf-8") as fix:
                     fix.write("\n")
 
-    stats = {
-        "processed": 0,
-        "failed_parse": 0,
-        "total_concerns": 0,
-        "total_time": 0.0,
-    }
+    stats = dict(existing_stats)
 
     with output_path.open(mode, encoding="utf-8") as fh:
         for i, entry in enumerate(to_process):
