@@ -121,6 +121,7 @@ def parse_model_output(text: str) -> tuple[list[dict], list[str]]:
     """Parse model output into (structured_concerns, text_concerns).
 
     Handles clean JSON, markdown fences, bracket extraction, and truncated JSON.
+    Also handles DeepSeek-R1 format: bare objects without leading '['.
     """
     text = text.strip()
     if not text:
@@ -149,6 +150,21 @@ def parse_model_output(text: str) -> tuple[list[dict], list[str]]:
     # 4) Progressive decode (truncated JSON)
     if start != -1:
         result = _progressive_decode(text[start:])
+        if result is not None:
+            return result
+
+    # 5) Bare objects without array wrapper (DeepSeek-R1 format: {...}, {...}])
+    stripped = text.lstrip()
+    if stripped.startswith("{"):
+        tail = text.rstrip()
+        if tail.endswith("]"):
+            tail = tail[:-1]
+        candidate = "[" + tail + "]"
+        result = _try_parse_array(candidate)
+        if result is not None:
+            return result
+        # Try progressive decode for truncated bare-object outputs
+        result = _progressive_decode("[" + text)
         if result is not None:
             return result
 
