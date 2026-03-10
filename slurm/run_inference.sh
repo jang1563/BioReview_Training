@@ -33,6 +33,8 @@ MODEL_DIR="${MODEL_DIR:-models/qwen7b_bioreview_v1}"
 SPLIT="${SPLIT:-val}"
 MAX_ARTICLES="${MAX_ARTICLES:-0}"
 EVALUATE="${EVALUATE:-true}"
+TAG="${TAG:-}"
+RESUME="${RESUME:-false}"
 
 # HuggingFace cache → scratch (must match ~/.bashrc HF_HOME)
 export HF_HOME="${SCRATCH_DIR}/huggingface"
@@ -46,6 +48,8 @@ echo "Node:         ${SLURMD_NODENAME}"
 echo "Model dir:    ${MODEL_DIR}"
 echo "Split:        ${SPLIT}"
 echo "Max articles: ${MAX_ARTICLES} (0=all)"
+echo "Tag:          ${TAG:-'(none)'}"
+echo "Resume:       ${RESUME}"
 echo "Evaluate:     ${EVALUATE}"
 echo "Start time:   $(date)"
 echo "============================================================"
@@ -116,6 +120,14 @@ CMD="${CMD} --splits-dir ${SPLITS_DIR}"
 
 if [ "${MAX_ARTICLES}" != "0" ]; then
     CMD="${CMD} --max-articles ${MAX_ARTICLES}"
+fi
+
+if [ -n "${TAG}" ]; then
+    CMD="${CMD} --tag ${TAG}"
+fi
+
+if [ "${RESUME}" = "true" ]; then
+    CMD="${CMD} --resume"
 fi
 
 if [ "${EVALUATE}" = "true" ]; then

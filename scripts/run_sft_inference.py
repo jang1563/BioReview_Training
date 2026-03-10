@@ -553,6 +553,18 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Skip articles already in output JSONL.",
     )
+    p.add_argument(
+        "--tag",
+        type=str,
+        default="",
+        help="Tag appended to output filename (e.g., 'full', 'step50').",
+    )
+    p.add_argument(
+        "--log-every",
+        type=int,
+        default=1,
+        help="Log progress every N articles (default: every article).",
+    )
     return p
 
 
@@ -576,8 +588,12 @@ def main() -> None:
         output_path = args.output
     else:
         model_name = model_dir.name
+        tag_suffix = f"_{args.tag}" if args.tag else ""
         output_path = (
-            project_root / "results" / "sft_eval" / f"{model_name}_{args.split}.jsonl"
+            project_root
+            / "results"
+            / "sft_eval"
+            / f"{model_name}_{args.split}{tag_suffix}.jsonl"
         )
 
     print("=" * 60)
@@ -592,6 +608,9 @@ def main() -> None:
     print(f"max_new_tokens: {args.max_new_tokens}")
     print(f"load_in_4bit:   {load_in_4bit}")
     print(f"evaluate:       {args.evaluate}")
+    if args.tag:
+        print(f"tag:            {args.tag}")
+    print(f"log_every:      {args.log_every}")
     print()
 
     # ── Add scripts dir to path for prepare_sft_data imports ────
@@ -665,6 +684,14 @@ def main() -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     mode = "a" if (args.resume and output_path.exists()) else "w"
 
+    # Sanitize: ensure file ends with newline before appending (crash mid-write)
+    if mode == "a" and output_path.stat().st_size > 0:
+        with open(output_path, "rb") as check:
+            check.seek(-1, 2)
+            if check.read(1) != b"\n":
+                with open(output_path, "a", encoding="utf-8") as fix:
+                    fix.write("\n")
+
     stats = {
         "processed": 0,
         "failed_parse": 0,
@@ -728,17 +755,18 @@ def main() -> None:
             if not parse_ok:
                 stats["failed_parse"] += 1
 
-            if (i + 1) % 10 == 0 or (i + 1) == len(to_process):
+            if (i + 1) % args.log_every == 0 or (i + 1) == len(to_process):
                 avg_time = stats["total_time"] / stats["processed"]
                 remaining = (len(to_process) - i - 1) * avg_time
                 print(
                     f"  [{i + 1}/{len(to_process)}] {art_id}: "
                     f"{len(texts)} concerns, {t_elapsed:.1f}s "
-                    f"(avg {avg_time:.1f}s/article, ~{remaining/60:.0f}min remaining)"
+                    f"(avg {avg_time:.1f}s/article, ~{remaining/60:.0f}min remaining)",
+                    flush=True,
                 )
 
-            # Flush periodically
-            if stats["processed"] % 20 == 0:
+            # Flush JSONL periodically
+            if stats["processed"] % 5 == 0:
                 fh.flush()
 
     # ── Summary ─────────────────────────────────────────────────

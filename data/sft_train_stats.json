@@ -1,31 +1,31 @@
 {
   "split": "train",
-  "total_articles": 4563,
-  "kept_articles": 839,
-  "dropped_too_few_concerns": 3717,
-  "dropped_title_only": 7,
+  "total_articles": 4740,
+  "kept_articles": 701,
+  "dropped_too_few_concerns": 4039,
+  "dropped_title_only": 0,
   "skipped_bad_json": 0,
-  "concerns_before": 66574,
-  "concerns_after": 5908,
-  "avg_concerns_per_article": 6.4815256257449345,
+  "concerns_before": 70147,
+  "concerns_after": 5400,
+  "avg_concerns_per_article": 6.875891583452211,
   "input_tokens": {
-    "mean": 14559.618593563766,
+    "mean": 14496.420827389444,
     "median": 15000,
     "max": 15000
   },
   "category_distribution": {
-    "design_flaw": 816,
-    "interpretation": 1192,
-    "statistical_methodology": 313,
-    "writing_clarity": 812,
-    "reagent_method_specificity": 193,
-    "missing_experiment": 1778,
-    "prior_art_novelty": 326,
-    "other": 8
+    "writing_clarity": 912,
+    "reagent_method_specificity": 223,
+    "missing_experiment": 1504,
+    "interpretation": 912,
+    "prior_art_novelty": 301,
+    "design_flaw": 661,
+    "statistical_methodology": 301,
+    "other": 6
   },
   "severity_distribution": {
-    "major": 4470,
-    "minor": 887,
-    "optional": 81
+    "major": 3735,
+    "minor": 1003,
+    "optional": 82
   }
 }

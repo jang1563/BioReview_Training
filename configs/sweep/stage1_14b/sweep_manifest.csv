@@ -1,0 +1,5 @@
+index,tag,config_path,base_model,output_dir,overrides
+1,baseline,configs/sweep/stage1_14b/baseline.yaml,Qwen/Qwen2.5-14B-Instruct,models/qwen2.5_14b_bioreview_v1_baseline,
+2,lr_1e4,configs/sweep/stage1_14b/lr_1e4.yaml,Qwen/Qwen2.5-14B-Instruct,models/qwen2.5_14b_bioreview_v1_lr_1e4,training.learning_rate=0.0001
+3,lr_3e4,configs/sweep/stage1_14b/lr_3e4.yaml,Qwen/Qwen2.5-14B-Instruct,models/qwen2.5_14b_bioreview_v1_lr_3e4,training.learning_rate=0.0003
+4,ep5,configs/sweep/stage1_14b/ep5.yaml,Qwen/Qwen2.5-14B-Instruct,models/qwen2.5_14b_bioreview_v1_ep5,training.num_train_epochs=5

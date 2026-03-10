@@ -1,0 +1,3 @@
+index,tag,config_path,base_model,output_dir,overrides
+1,baseline,configs/sweep/stage1_9b/baseline.yaml,Qwen/Qwen3.5-9B,models/qwen3.5_9b_bioreview_v1_baseline,
+2,lr_1e4,configs/sweep/stage1_9b/lr_1e4.yaml,Qwen/Qwen3.5-9B,models/qwen3.5_9b_bioreview_v1_lr_1e4,training.learning_rate=0.0001

@@ -1,0 +1,21 @@
+# Sweep Stage 1: Qwen2.5-14B OFAT experiments
+# Run: python scripts/sweep_manager.py generate-configs --sweep configs/sweep/stage1_14b.yaml
+
+base_config: ../qwen2.5_14b_qlora.yaml
+output_dir: stage1_14b
+
+experiments:
+  - tag: baseline
+    # No overrides — exact copy of base config
+
+  - tag: lr_1e4
+    overrides:
+      training.learning_rate: 1.0e-4
+
+  - tag: lr_3e4
+    overrides:
+      training.learning_rate: 3.0e-4
+
+  - tag: ep5
+    overrides:
+      training.num_train_epochs: 5
