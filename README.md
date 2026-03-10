@@ -6,16 +6,18 @@ QLoRA SFT (Supervised Fine-Tuning) pipeline for training biomedical peer-review 
 
 Fine-tunes open-source LLMs to identify specific scientific concerns in biomedical papers, evaluated against human reviewer annotations using SPECTER2 semantic matching.
 
-**Baselines (peer-review-benchmark val split, 982 articles):**
+**Results (peer-review-benchmark val split, 982 articles):**
 
-| Model | F1 | Recall | Precision |
-|-------|-----|--------|-----------|
-| GPT-4o-mini | 0.6962 | — | — |
-| Gemini-2.5-Flash | 0.4489 | — | — |
-| **Ensemble Union v1** (9B+14B) | **0.5403** | **0.385** | **0.903** |
-| Qwen3.5-9B v1 (SFT) | 0.4248 | 0.274 | 0.947 |
-| Qwen2.5-14B v1 (SFT) | 0.3809 | 0.238 | 0.962 |
-| Ensemble Vote2 v1 | 0.0904 | 0.047 | 0.999 |
+| Model | F1 | Recall | Precision | concerns/art |
+|-------|-----|--------|-----------|--------------|
+| GPT-4o-mini (baseline) | 0.6962 | — | — | — |
+| Gemini-2.5-Flash (baseline) | 0.4489 | — | — | — |
+| **Ensemble Union v1** (9B+14B) | **0.5403** | **0.385** | **0.903** | 6.1 |
+| Qwen3.5-9B v1 (SFT) | 0.4248 | 0.274 | 0.947 | 4.1 |
+| Qwen2.5-14B v1 (SFT) | 0.3809 | 0.238 | 0.962 | 3.5 |
+| Ensemble Vote2 v1 | 0.0904 | 0.047 | 0.999 | 0.7 |
+
+> v2 models (improved training data + system prompt) inference in progress.
 
 ---
 
@@ -24,14 +26,14 @@ Fine-tunes open-source LLMs to identify specific scientific concerns in biomedic
 ```
 BioReview_Training/
 ├── configs/                   # Training configurations
-│   ├── qwen3.5_9b_qlora.yaml       # Qwen3.5-9B QLoRA (A40 48G)
+│   ├── qwen3.5_9b_qlora.yaml       # Qwen3.5-9B QLoRA (A100 80G — A40 OOM at seq=16384)
+│   ├── qwen3.5_9b_qlora_v2.yaml    # v2 (updated system prompt + training data)
 │   ├── qwen2.5_14b_qlora.yaml      # Qwen2.5-14B QLoRA (A100 80G)
+│   ├── qwen2.5_14b_qlora_v2.yaml
 │   ├── deepseek_r1_14b_qlora.yaml  # DeepSeek-R1-14B QLoRA (A100 80G)
-│   ├── qwen3_8b_qlora.yaml         # Qwen3-8B QLoRA (A40)
-│   ├── qwen7b_qlora.yaml           # Qwen2.5-7B QLoRA (A40)
 │   └── sweep/                      # Hyperparameter sweep configs
-│       ├── stage1_9b.yaml / stage1_14b.yaml   # Sweep specs
-│       └── stage1_9b/ stage1_14b/              # Generated variant YAMLs
+│       ├── stage1_9b.yaml / stage1_14b.yaml
+│       └── stage1_9b/ stage1_14b/  # Generated variant YAMLs
 │
 ├── scripts/
 │   ├── prepare_sft_data.py    # Convert benchmark splits → ShareGPT JSONL
@@ -39,153 +41,165 @@ BioReview_Training/
 │   ├── run_sft_inference.py   # Inference + evaluation on val/test splits
 │   ├── compare_models.py      # Side-by-side F1/Recall/Precision table
 │   ├── ensemble_concerns.py   # Multi-model union/vote ensemble
+│   ├── reevaluate_ensemble.py # Re-run ensemble eval with SPECTER2 on HPC
 │   ├── error_analysis.py      # Per-category P/R, failure modes (HPC + local)
 │   ├── sweep_manager.py       # Generate sweep configs, log results
 │   ├── run_baselines.py       # Evaluate GPT/Gemini baselines
 │   └── download_specter2.py   # Cache SPECTER2 model locally
 │
 ├── slurm/
-│   ├── train_sft.sh           # SLURM training job (A40 default, A100 option)
+│   ├── train_sft.sh           # SLURM training job (A100 recommended)
 │   ├── run_inference.sh       # SLURM inference job (supports RESUME=true)
 │   ├── sweep_array.sh         # SLURM array job for hyperparameter sweeps
 │   ├── sync_to_hpc.sh         # rsync: local → HPC (or --download)
 │   └── setup_cayuga.sh        # One-time HPC environment setup
 │
-├── data/                      # SFT training data (gitignored, see below)
-│   ├── sft_train.jsonl        # 701 articles, ShareGPT format
+├── data/                      # SFT training data (gitignored)
+│   ├── sft_train.jsonl        # 701 articles, ShareGPT format (v2)
 │   ├── sft_val.jsonl          # 121 articles
-│   ├── sft_train_stats.json   # Category distribution, token stats
-│   └── sft_val_stats.json
+│   └── sft_train_stats.json   # Category distribution stats
 │
 ├── models/                    # Model weights (gitignored)
-│   └── specter2_base/         # Local SPECTER2 cache (required for eval)
+│   └── specter2_base/         # Local SPECTER2 cache (required for evaluation)
 │
 ├── results/
-│   ├── sft_eval/              # Inference outputs (gitignored)
-│   │   └── *.jsonl + *.summary.json
+│   ├── sft_eval/              # Inference outputs + summary.json (gitignored)
 │   ├── baseline_eval/         # Baseline evaluation outputs (gitignored)
-│   └── error_analysis/        # Error analysis JSON outputs
+│   └── lessons_learned_*.md   # Per-iteration lessons
 │
-└── requirements-train.txt     # pip dependencies
+└── requirements-train.txt
 ```
 
 ---
 
 ## Quick Start
 
-### 1. Setup (local)
+### 1. Setup
 
 ```bash
-# Clone alongside peer-review-benchmark
 git clone https://github.com/jang1563/BioReview_Training
 cd BioReview_Training
 
-# Download SPECTER2 model (required for evaluation)
+# Cache SPECTER2 locally (required for evaluation — Jaccard fallback gives wrong metrics)
 python scripts/download_specter2.py
 ```
 
 ### 2. Prepare training data
 
-Requires `peer-review-benchmark` in the sibling directory (`../peer-review-benchmark/`).
+Requires `peer-review-benchmark/` in the sibling directory.
 
 ```bash
-# Generate SFT JSONL from benchmark splits
 python scripts/prepare_sft_data.py --splits train val
 
-# Options:
-#   --min-concerns 3          minimum concerns per article (default: 3)
-#   --min-resolution-confidence 0.8  confidence filter (default: 0.8)
-#   --token-budget 15000      max input tokens per article (default: 15000)
-#   --preview 2               show 2 example articles
+# Key options:
+#   --min-concerns 3                    minimum concerns per article (default: 3)
+#   --min-resolution-confidence 0.8     confidence filter (default: 0.8)
+#   --token-budget 15000                max input tokens (default: 15000)
 ```
 
 **Training data stats (v2, 2026-03-09):**
 
-| Split | Articles | Avg concerns | Top categories |
-|-------|----------|--------------|----------------|
-| train | 701 | 6.88 | missing_exp 31.2%, writing_clarity 18.9%, interpretation 18.9% |
-| val | 121 | 6.82 | missing_exp 28.3%, writing_clarity 16.4%, interpretation 18.3% |
+| Split | Articles | Avg concerns | writing_clarity | missing_experiment |
+|-------|----------|--------------|-----------------|-------------------|
+| train | 701 | 6.88 | 18.9% | 31.2% |
+| val | 121 | 6.82 | 16.4% | 28.3% |
 
-### 3. Train locally (for testing)
-
-```bash
-# Quick 50-step test
-python scripts/train_sft.py --config configs/qwen3.5_9b_qlora.yaml --max-steps 50 --no-eval
-
-# Full training (requires GPU)
-python scripts/train_sft.py --config configs/qwen3.5_9b_qlora.yaml
-```
-
-### 4. Sync and train on HPC (Cornell Cayuga)
+### 3. Train on HPC (Cornell Cayuga)
 
 ```bash
-# Upload to HPC
+# Sync to HPC
 bash slurm/sync_to_hpc.sh
 
-# On HPC — submit training
-sbatch --gres=gpu:a40:1 --mem=48G --export=ALL,CONFIG=configs/qwen3.5_9b_qlora.yaml slurm/train_sft.sh
-sbatch --gres=gpu:a100:1 --mem=80G --export=ALL,CONFIG=configs/qwen2.5_14b_qlora.yaml slurm/train_sft.sh
+# Submit training (use A100 for all models — A40 OOM at max_seq_length=16384)
+/opt/ohpc/pub/software/slurm/24.05.2/bin/sbatch \
+    --gres=gpu:a100:1 --mem=80G \
+    --export=ALL,CONFIG=configs/qwen2.5_14b_qlora_v2.yaml \
+    slurm/train_sft.sh
 
-# Download results
-bash slurm/sync_to_hpc.sh --download
+/opt/ohpc/pub/software/slurm/24.05.2/bin/sbatch \
+    --gres=gpu:a100:1 --mem=80G \
+    --export=ALL,CONFIG=configs/qwen3.5_9b_qlora_v2.yaml,PYTORCH_ALLOC_CONF=expandable_segments:True \
+    slurm/train_sft.sh
 ```
 
-**HPC SLURM note:** Use full path `/opt/ohpc/pub/software/slurm/24.05.2/bin/sbatch` when submitting via SSH (local `sbatch` version mismatch causes protocol error).
+> **Note:** Use the full sbatch path when submitting via SSH. `--export` must include `ALL` or PATH/conda will be lost.
 
-### 5. Run inference and evaluate
+### 4. Run inference and evaluate
 
 ```bash
-# Run on HPC (requires trained model in models/)
-sbatch --export=ALL,MODEL_DIR=models/qwen3.5_9b_bioreview_v1 slurm/run_inference.sh
+# Submit inference (on HPC)
+/opt/ohpc/pub/software/slurm/24.05.2/bin/sbatch \
+    --export=ALL,MODEL_DIR=models/qwen2.5_14b_bioreview_v2,SPLIT=val \
+    slurm/run_inference.sh
 
-# Resume interrupted job
-sbatch --time=06:00:00 --gres=gpu:a40:1 --mem=48G \
+# Resume interrupted inference
+/opt/ohpc/pub/software/slurm/24.05.2/bin/sbatch \
+    --time=06:00:00 --gres=gpu:a40:1 --mem=48G \
     --export=ALL,MODEL_DIR=models/qwen3.5_9b_bioreview_v1,RESUME=true \
     slurm/run_inference.sh
 
-# Compare models (local, after downloading results)
+# Download results and compare locally
+bash slurm/sync_to_hpc.sh --download
+
 python scripts/compare_models.py \
     results/sft_eval/qwen3.5_9b_bioreview_v1_val.jsonl \
     results/sft_eval/qwen2.5_14b_bioreview_v1_val.jsonl
 ```
 
+### 5. Ensemble
+
+```bash
+python scripts/ensemble_concerns.py \
+    --models results/sft_eval/qwen3.5_9b_bioreview_v1_val.jsonl \
+             results/sft_eval/qwen2.5_14b_bioreview_v1_val.jsonl \
+    --labels "9B" "14B" --strategy union \
+    --output results/sft_eval/ensemble_union_val.jsonl \
+    --evaluate --splits-dir /path/to/peer-review-benchmark/data/splits/v3
+
+# If --evaluate was run without SPECTER2 (gave wrong metrics), re-run:
+python scripts/reevaluate_ensemble.py  # on HPC where SPECTER2 is accessible
+```
+
 ---
 
-## Models Trained
+## Models
 
-### Version 1 (trained on 839-article split, 2026-03-08/09)
+### v1 — trained on 839-article split (2026-03-08/09)
 
-| Model | Config | Training time | F1 | Recall | Precision |
-|-------|--------|---------------|-----|--------|-----------|
-| Qwen3.5-9B-v1 | A40, 3 epochs | 883 min | 0.4248 | 0.2738 | 0.9467 |
-| Qwen2.5-14B-v1 | A100, 3 epochs | 408 min | 0.3809 | 0.2375 | 0.9617 |
-| Qwen3-8B-v1 | A40, 3 epochs | — | 50-step only | — | — |
-| Qwen2.5-7B-v1 | A40, 3 epochs | — | 50-step only | — | — |
-| DeepSeek-R1-14B-v1 | A100, 3 epochs | 409 min | inference in progress | — | — |
+| Model | GPU | Time | F1 | Recall | Precision |
+|-------|-----|------|----|--------|-----------|
+| Qwen3.5-9B-v1 | A40 | 883 min | 0.4248 | 0.2738 | 0.9467 |
+| Qwen2.5-14B-v1 | A100 | 408 min | 0.3809 | 0.2375 | 0.9617 |
+| DeepSeek-R1-14B-v1 | A100 | 409 min | in progress | — | — |
+| **Ensemble Union v1** | — | — | **0.5403** | **0.385** | **0.903** |
 
-### Version 2 (submitted 2026-03-09, training in progress)
+### v2 — 701-article split, updated system prompt (2026-03-10)
 
-Training data: 701 articles, avg 6.88 concerns, updated system prompt (10-15 concerns, anti-repetition).
+Improvements: 10–15 concerns (was 5–15), anti-repetition rule, full v3 split for more writing_clarity examples.
 
-| Model | SLURM job | Status |
-|-------|-----------|--------|
-| Qwen2.5-14B-v2 | 2701664 | PENDING |
-| Qwen3.5-9B-v2 | 2701665 | PENDING |
+| Model | Job | Status |
+|-------|-----|--------|
+| Qwen2.5-14B-v2 | 2701664 | **COMPLETED** (342 min), inference running (2701821) |
+| Qwen3.5-9B-v2 | 2701820 | RUNNING on A100 (~12h total) |
 
 ---
 
 ## Training Data Pipeline
 
 ```
-peer-review-benchmark/data/splits/v3/train.jsonl
+peer-review-benchmark/data/splits/v3/train.jsonl  (4740 articles)
          │
          ▼ scripts/prepare_sft_data.py
-         │   - Filter: resolution_confidence ≥ 0.8, no figure concerns
-         │   - Filter: ≥ 3 concerns per article
-         │   - Truncate to 15,000 token budget (priority: methods > results > intro > ...)
+         │   - Filter: resolution_confidence ≥ 0.8
+         │   - Filter: ≥ 3 concerns per article, no figure concerns
+         │   - Truncate: 15,000 token budget (methods > results > intro > ...)
          │   - Format: ShareGPT (system / human / gpt turns)
          ▼
-data/sft_train.jsonl  ──►  scripts/train_sft.py  ──►  models/<name>/
+data/sft_train.jsonl  (701 articles, avg 6.88 concerns)
+         │
+         ▼ scripts/train_sft.py
+         ▼
+models/<name>/  (LoRA adapter)
 ```
 
 ### System prompt (v2)
@@ -193,17 +207,19 @@ data/sft_train.jsonl  ──►  scripts/train_sft.py  ──►  models/<name>/
 Located in `../peer-review-benchmark/bioreview_bench/baseline/reviewer.py` (`REVIEWER_SYSTEM`).
 
 Key rules:
-1. Generate **10–15** specific, actionable scientific concerns
-2. Cover diverse types: design, methods, statistics, interpretation, **writing clarity**, reagent specificity
+1. Generate **10–15** specific, actionable concerns (raised from 5–15 to improve recall)
+2. Cover diverse types: design, methods, statistics, interpretation, writing clarity, reagent specificity
 3. Do NOT generate concerns about figures
-4. Do NOT repeat the same concern for multiple figures/sections/experiments
+4. Do NOT repeat the same concern across figures/sections/experiments
 
-### Output format (SFT target)
+### Output format
 
 ```json
 [
-  {"text": "The statistical analysis uses t-tests...", "category": "statistical_methodology", "severity": "major"},
-  {"text": "Missing negative controls for...", "category": "missing_experiment", "severity": "major"}
+  {"text": "The statistical analysis uses t-tests without verifying normality...",
+   "category": "statistical_methodology", "severity": "major"},
+  {"text": "Missing negative controls for the knockdown experiment...",
+   "category": "missing_experiment", "severity": "major"}
 ]
 ```
 
@@ -215,27 +231,21 @@ Key rules:
 
 ## Evaluation
 
-Evaluation uses **SPECTER2** semantic embeddings + Hungarian algorithm matching (threshold 0.65) from `bioreview_bench.evaluate.runner`.
+Uses **SPECTER2** semantic embeddings + Hungarian algorithm (threshold 0.65).
+
+> **Critical:** SPECTER2 must be available. Without it, evaluation silently falls back to Jaccard similarity (word overlap), giving misleadingly low scores (~F1=0.03 instead of ~0.54). Always run `scripts/download_specter2.py` first, or ensure `allenai/specter2_base` is accessible from HuggingFace.
 
 ```bash
-# After inference, summary.json is auto-generated:
+# View inference summary
 cat results/sft_eval/qwen3.5_9b_bioreview_v1_val.summary.json
 
-# Error analysis (run on HPC with SPECTER2):
+# Per-category error analysis (run on HPC with SPECTER2)
 python scripts/error_analysis.py \
     --models results/sft_eval/qwen3.5_9b_bioreview_v1_val.jsonl \
              results/sft_eval/qwen2.5_14b_bioreview_v1_val.jsonl \
     --model-labels "Qwen3.5-9B" "Qwen2.5-14B" \
     --splits-dir /path/to/peer-review-benchmark/data/splits/v3 \
     --output-json results/error_analysis/analysis.json
-
-# Ensemble (union of multiple models):
-python scripts/ensemble_concerns.py \
-    --models results/sft_eval/qwen3.5_9b_bioreview_v1_val.jsonl \
-             results/sft_eval/qwen2.5_14b_bioreview_v1_val.jsonl \
-    --labels "9B" "14B" --strategy union \
-    --output results/sft_eval/ensemble_union_val.jsonl \
-    --evaluate --splits-dir /path/to/splits/v3
 ```
 
 ---
@@ -243,51 +253,60 @@ python scripts/ensemble_concerns.py \
 ## Hyperparameter Sweeps
 
 ```bash
-# Generate sweep variant configs
+# Generate sweep configs
 python scripts/sweep_manager.py generate-configs \
     --sweep configs/sweep/stage1_9b.yaml \
     --output-dir configs/sweep/stage1_9b
 
-# Submit SLURM array job (on HPC)
-sbatch --array=1-2%2 --gres=gpu:a40:1 --mem=48G \
+# Submit SLURM array (on HPC)
+sbatch --array=1-2%2 --gres=gpu:a100:1 --mem=80G \
     --export=ALL,MANIFEST=configs/sweep/stage1_9b/sweep_manifest.csv \
     slurm/sweep_array.sh
 
-# View results
 python scripts/sweep_manager.py show-results
 ```
 
 ---
 
-## Key Files Reference
+## Key Files
 
 | File | Purpose |
 |------|---------|
-| `scripts/prepare_sft_data.py` | Data preprocessing; `--min-resolution-confidence` controls quality filter |
+| `scripts/prepare_sft_data.py` | Data preprocessing; `--min-resolution-confidence` / `--min-concerns` |
 | `scripts/train_sft.py` | Training; auto-detects Unsloth vs standard PEFT |
 | `scripts/run_sft_inference.py` | Inference with `--tag` suffix, `--resume`, per-article logging |
-| `scripts/compare_models.py` | Prints F1/R/P table from multiple JSONL files |
-| `scripts/ensemble_concerns.py` | union / intersection / vote-k ensemble strategies |
+| `scripts/compare_models.py` | F1/R/P table from multiple JSONL summary files |
+| `scripts/ensemble_concerns.py` | union / intersection / vote-k ensemble; requires SPECTER2 for `--evaluate` |
+| `scripts/reevaluate_ensemble.py` | Re-run ensemble evaluation with SPECTER2 (use when original eval used Jaccard) |
 | `scripts/error_analysis.py` | HPC mode (SPECTER2) + local mode (pre-computed JSON) |
-| `scripts/sweep_manager.py` | `generate-configs` / `log-result` / `show-results` subcommands |
-| `slurm/sync_to_hpc.sh` | rsync wrapper; `--download` flag for results |
+| `scripts/sweep_manager.py` | `generate-configs` / `log-result` / `show-results` |
+| `slurm/sync_to_hpc.sh` | rsync wrapper; `--download` to pull results |
 | `../peer-review-benchmark/bioreview_bench/baseline/reviewer.py` | `REVIEWER_SYSTEM` prompt used for SFT |
+
+---
+
+## Known Issues / Lessons Learned
+
+- **Qwen3.5-9B on A40**: OOM at step 0 with `max_seq_length=16384` (training data p99 ≈ 15K tokens). Use A100 (80GB).
+- **SPECTER2 fallback**: If `sentence-transformers` unavailable, evaluation silently uses Jaccard → ~5% precision. Always verify SPECTER2 before trusting eval metrics.
+- **writing_clarity imbalance**: 96% of writing_clarity concerns have `resolution_confidence=0.10` (no annotator response). Lowering the confidence threshold to include them causes 80%+ writing_clarity domination. Fix: use a larger split (full v3 → 18.9% naturally).
+- **14B figure repetition**: v1 model repeated the same concern template per figure ("Figure X shows dramatic differences…"). Fixed in v2 via Rule 8 in system prompt.
+- See `results/lessons_learned_2026-03-09.md` for full analysis.
 
 ---
 
 ## Dependencies
 
 ```bash
-# Create conda environment
 conda create -n bioreview-sft python=3.11
 conda activate bioreview-sft
 pip install -r requirements-train.txt
 
-# Optional: Unsloth for faster training
+# Optional: Unsloth for faster training (requires trl≥0.18.2)
 pip install unsloth
 ```
 
 Requires **sibling directory** `../peer-review-benchmark/` for:
-- Training/val splits: `data/splits/v3/{train,val,test}.jsonl`
-- Evaluation runner: `bioreview_bench.evaluate.runner`
+- Splits: `data/splits/v3/{train,val,test}.jsonl`
+- Evaluation: `bioreview_bench.evaluate.runner`
 - System prompt: `bioreview_bench/baseline/reviewer.py`
