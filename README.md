@@ -12,8 +12,10 @@ Fine-tunes open-source LLMs to identify specific scientific concerns in biomedic
 |-------|-----|--------|-----------|
 | GPT-4o-mini | 0.6962 | — | — |
 | Gemini-2.5-Flash | 0.4489 | — | — |
-| Qwen3.5-9B v1 (SFT) | **0.4248** | 0.274 | 0.947 |
+| **Ensemble Union v1** (9B+14B) | **0.5403** | **0.385** | **0.903** |
+| Qwen3.5-9B v1 (SFT) | 0.4248 | 0.274 | 0.947 |
 | Qwen2.5-14B v1 (SFT) | 0.3809 | 0.238 | 0.962 |
+| Ensemble Vote2 v1 | 0.0904 | 0.047 | 0.999 |
 
 ---
 

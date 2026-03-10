@@ -416,6 +416,24 @@ def main() -> None:
         if str(bench_root) not in sys.path:
             sys.path.insert(0, str(bench_root))
 
+        # Verify SPECTER2 is loadable before evaluation (Jaccard gives misleadingly low scores)
+        try:
+            from sentence_transformers import SentenceTransformer as _ST
+            _model_path = os.getenv("BIOREVIEW_EMBED_MODEL", "allenai/specter2_base")
+            _local = Path(_model_path).exists() if _model_path != "allenai/specter2_base" else False
+            _m = _ST(_model_path, local_files_only=_local)
+            _m.encode(["test"], normalize_embeddings=True)
+            del _m
+            print("  SPECTER2 verified OK", flush=True)
+        except Exception as _e:
+            print(
+                f"ERROR: SPECTER2 not available for evaluation ({_e}).\n"
+                "Evaluation requires SPECTER2. Skipping to avoid misleading Jaccard metrics.\n"
+                "Run scripts/reevaluate_ensemble.py on HPC where SPECTER2 is accessible.",
+                file=sys.stderr,
+            )
+            return
+
         try:
             from bioreview_bench.evaluate.runner import run_evaluation
 
