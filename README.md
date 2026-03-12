@@ -12,12 +12,16 @@ Fine-tunes open-source LLMs to identify specific scientific concerns in biomedic
 |-------|-----|--------|-----------|--------------|
 | GPT-4o-mini (baseline) | 0.6962 | — | — | — |
 | Gemini-2.5-Flash (baseline) | 0.4489 | — | — | — |
-| **Ensemble Union v1** (9B+14B) | **0.5403** | **0.385** | **0.903** | 6.1 |
+| **Ensemble Union v2** (9B-v2+14B-v2) | **0.5831** | **0.433** | **0.891** | 6.9 |
+| **Ensemble Union v1** (9B+14B) | **0.5403** | 0.385 | 0.903 | 6.1 |
+| DeepSeek-R1-14B v1 (SFT) | 0.4316 | 0.280 | 0.936 | 4.3 |
 | Qwen3.5-9B v1 (SFT) | 0.4248 | 0.274 | 0.947 | 4.1 |
+| Qwen3.5-9B v2 (SFT) | 0.4019 | 0.255 | 0.946 | 3.8 |
 | Qwen2.5-14B v1 (SFT) | 0.3809 | 0.238 | 0.962 | 3.5 |
+| Qwen2.5-14B v2 (SFT) | 0.3636 | 0.225 | 0.942 | 3.4 |
 | Ensemble Vote2 v1 | 0.0904 | 0.047 | 0.999 | 0.7 |
 
-> v2 models (improved training data + system prompt) inference in progress.
+> Ensemble uses `--cluster-threshold 0.98` (near-exact dedup). Lower thresholds cause over-clustering via connected components transitivity in SPECTER2 space.
 
 ---
 
@@ -172,21 +176,22 @@ pip install openai anthropic google-generativeai
 
 ### v1 — trained on 839-article split (2026-03-08/09)
 
-| Model | GPU | Time | F1 | Recall | Precision |
-|-------|-----|------|----|--------|-----------|
-| Qwen3.5-9B-v1 | A40 | 883 min | 0.4248 | 0.2738 | 0.9467 |
+| Model | GPU | Train time | F1 | Recall | Precision |
+|-------|-----|------------|----|--------|-----------|
+| Qwen3.5-9B-v1 | A100 | 883 min | 0.4248 | 0.2738 | 0.9467 |
 | Qwen2.5-14B-v1 | A100 | 408 min | 0.3809 | 0.2375 | 0.9617 |
-| DeepSeek-R1-14B-v1 | A100 | 409 min | in progress | — | — |
+| DeepSeek-R1-14B-v1 | A100 | 409 min | 0.4316 | 0.2804 | 0.9364 |
 | **Ensemble Union v1** | — | — | **0.5403** | **0.385** | **0.903** |
 
-### v2 — 701-article split, updated system prompt (2026-03-10)
+### v2 — 701-article split, updated system prompt (2026-03-12)
 
 Improvements: 10–15 concerns (was 5–15), anti-repetition rule, full v3 split for more writing_clarity examples.
 
-| Model | Job | Status |
-|-------|-----|--------|
-| Qwen2.5-14B-v2 | 2701664 | **COMPLETED** (342 min), inference running (2701821) |
-| Qwen3.5-9B-v2 | 2701820 | RUNNING on A100 (~12h total) |
+| Model | GPU | Train time | F1 | Recall | Precision |
+|-------|-----|------------|----|--------|-----------|
+| Qwen3.5-9B-v2 | A100 | 731 min | 0.4019 | 0.2551 | 0.9458 |
+| Qwen2.5-14B-v2 | A100 | 342 min | 0.3636 | 0.2253 | 0.9422 |
+| **Ensemble Union v2** | — | — | **0.5831** | **0.433** | **0.891** |
 
 > These v2 job statuses refer to external HPC runs and the corresponding model directories/configs are not checked into this repository snapshot.
 
@@ -297,8 +302,11 @@ python scripts/sweep_manager.py show-results
 
 - **Qwen3.5-9B on A40**: OOM at step 0 with `max_seq_length=16384` (training data p99 ≈ 15K tokens). Use A100 (80GB).
 - **SPECTER2 fallback**: If `sentence-transformers` unavailable, evaluation silently uses Jaccard → ~5% precision. Always verify SPECTER2 before trusting eval metrics.
+- **Ensemble cluster threshold**: SPECTER2 cosine similarity for short biomedical concerns is uniformly high (0.85–0.95+). Connected-components clustering with threshold ≤ 0.90 causes transitivity chaining → all concerns merge into 1 per article. Use `--cluster-threshold 0.98` for near-exact dedup only.
+- **DeepSeek-R1 output format**: Model outputs bare JSON objects `{…}, {…}]` without a leading `[`. Fixed in `parse_model_output()` step 5; use `scripts/reparse_inference.py` to retroactively fix existing JSONL files.
 - **writing_clarity imbalance**: 96% of writing_clarity concerns have `resolution_confidence=0.10` (no annotator response). Lowering the confidence threshold to include them causes 80%+ writing_clarity domination. Fix: use a larger split (full v3 → 18.9% naturally).
 - **14B figure repetition**: v1 model repeated the same concern template per figure ("Figure X shows dramatic differences…"). Fixed in v2 via Rule 8 in system prompt.
+- **v2 individual models slightly worse than v1**: System prompt change (5–15 → 10–15 concerns) did not improve individual F1; v2 ensemble gains are higher (0.54 → 0.58) because models generate more concerns to combine.
 - See `results/lessons_learned_2026-03-09.md` for full analysis.
 
 ---
