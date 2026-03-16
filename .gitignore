@@ -1,10 +1,15 @@
 # Large model files
 models/
 
-# Training data (hosted on HuggingFace)
+# Training data (hosted on HuggingFace / large corpora)
 data/sft_train.jsonl
 data/sft_val.jsonl
 data/sweeps/
+data/corpus_*/
+data/splits_reparse/
+
+# Error analysis JSON (large)
+results/error_analysis/*.json
 
 # Generated baseline outputs
 results/baseline_eval/

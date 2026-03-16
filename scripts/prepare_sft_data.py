@@ -281,6 +281,7 @@ def get_token_counter(hf_tokenizer: str = "") -> tuple[Callable[[str], int], str
                     return 0
                 return len(tok.encode(text, add_special_tokens=False))
 
+            _count.mode = "hf"  # type: ignore[attr-defined]
             return _count, f"transformers:{hf_tokenizer}"
         except Exception:
             pass
@@ -295,6 +296,7 @@ def get_token_counter(hf_tokenizer: str = "") -> tuple[Callable[[str], int], str
                 return 0
             return len(enc.encode(text))
 
+        _count.mode = "tiktoken"  # type: ignore[attr-defined]
         return _count, "tiktoken:cl100k_base"
     except Exception:
         # Conservative fallback to reduce overflow risk under long-context training.
@@ -304,6 +306,7 @@ def get_token_counter(hf_tokenizer: str = "") -> tuple[Callable[[str], int], str
                 return 0
             return max(1, math.ceil(len(text) / 3))
 
+        _count.mode = "heuristic_chars3"  # type: ignore[attr-defined]
         return _count, "heuristic:chars/3(conservative)"
 
 
@@ -332,6 +335,19 @@ def truncate_text_to_tokens(
     text = normalize_whitespace(text)
     if budget_tokens <= 0 or not text:
         return ""
+    if getattr(count_tokens, "mode", "") == "heuristic_chars3":
+        char_cap = budget_tokens * 3
+        if len(text) <= char_cap:
+            return text
+        marker_cap = max(0, char_cap - len(TRUNCATION_MARKER))
+        truncated = text[:marker_cap].rstrip()
+        return truncated + TRUNCATION_MARKER if truncated else text[:char_cap].rstrip()
+    # Avoid repeated full-string token counting on extremely long sections.
+    # A 6 chars/token bound is generous for scientific prose and only acts as a
+    # coarse pre-clip before the exact token-budget enforcement below.
+    coarse_char_cap = budget_tokens * 6
+    if len(text) > coarse_char_cap:
+        text = text[:coarse_char_cap]
     if count_tokens(text) <= budget_tokens:
         return text
 

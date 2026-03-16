@@ -2,10 +2,11 @@
 # ── BioReview SFT Inference + Evaluation — Cornell Cayuga HPC ──────────────
 #
 # Runs inference on the fine-tuned model, then evaluates against ground truth.
-# Requires: trained model in models/qwen7b_bioreview_v1/
+# Requires: trained model in the configured output directory
 #
 # Usage:
 #   sbatch slurm/run_inference.sh                                  # full val set
+#   sbatch --export=MODEL_DIR=models/qwen3.5_9b_all_nonfig_v1 slurm/run_inference.sh
 #   sbatch slurm/run_inference.sh --export=MAX_ARTICLES=5          # quick test
 #   sbatch slurm/run_inference.sh --export=SPLIT=test              # test set
 #   sbatch --gres=gpu:a100:1 --mem=80G slurm/run_inference.sh     # use A100 instead
@@ -29,7 +30,7 @@
 CONDA_ENV="${CONDA_ENV:-bioreview-sft}"
 SCRATCH_DIR="/athena/masonlab/scratch/users/jak4013"
 PROJECT_DIR="${SCRATCH_DIR}/BioReview_Training"
-MODEL_DIR="${MODEL_DIR:-models/qwen7b_bioreview_v1}"
+MODEL_DIR="${MODEL_DIR:-models/qwen3_8b_all_nonfig_v1}"
 SPLIT="${SPLIT:-val}"
 MAX_ARTICLES="${MAX_ARTICLES:-0}"
 EVALUATE="${EVALUATE:-true}"
@@ -86,7 +87,7 @@ echo ""
 
 # ── Verify peer-review-benchmark for evaluation ──────────────────────────
 BENCH_DIR="${SCRATCH_DIR}/peer-review-benchmark"
-SPLITS_DIR="${BENCH_DIR}/data/splits/v3"
+SPLITS_DIR="${SPLITS_DIR:-${BENCH_DIR}/data/splits/v3}"
 
 # Splits are required for both inference (article loading) and evaluation
 if [ ! -d "${SPLITS_DIR}" ]; then

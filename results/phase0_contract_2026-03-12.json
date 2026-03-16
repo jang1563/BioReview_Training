@@ -1,0 +1,44 @@
+{
+  "date": "2026-03-12",
+  "benchmark": {
+    "splits_dir": "../peer-review-benchmark/data/splits/v3",
+    "train_articles": 4740,
+    "val_articles": 838,
+    "test_articles": 981
+  },
+  "evaluation": {
+    "primary_metric": "f1_micro",
+    "secondary_metrics": [
+      "recall_overall",
+      "recall_major",
+      "precision_overall",
+      "avg_generated_concerns_per_article"
+    ],
+    "comparison_rule": "Do not compare directly to legacy 982-article val runs unless labeled legacy."
+  },
+  "prompt_contract": {
+    "target_concern_count": "10-15",
+    "require_category_diversity": true,
+    "forbid_figure_only_concerns": true,
+    "forbid_near_duplicates": true
+  },
+  "input_contract": {
+    "builder": "scripts/prepare_sft_data.py",
+    "token_budget": 15000,
+    "token_counter": "heuristic:chars/3(conservative)",
+    "drop_title_only": true,
+    "include_figure_issues": false
+  },
+  "corpora": {
+    "all_nonfig": {
+      "output_dir": "data/corpus_all_nonfig",
+      "min_resolution_confidence": 0.0,
+      "min_concerns": 1
+    },
+    "hi_conf": {
+      "output_dir": "data/corpus_hi_conf",
+      "min_resolution_confidence": 0.8,
+      "min_concerns": 3
+    }
+  }
+}

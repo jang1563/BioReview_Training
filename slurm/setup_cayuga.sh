@@ -11,7 +11,7 @@
 #   - Cayuga VPN connected
 #
 # After setup, submit training:
-#   sbatch slurm/train_sft.sh
+#   /opt/ohpc/pub/software/slurm/24.05.2/bin/sbatch slurm/train_sft.sh
 # ============================================================
 
 set -euo pipefail
@@ -87,7 +87,13 @@ pip install \
 echo ""
 echo "[Step 7/10] Installing Unsloth (recommended for 2-5x faster training)..."
 if pip install unsloth 2>&1; then
-    echo "  Unsloth installed. Training will use optimized backend (~12-16GB VRAM)."
+    echo "  pip install completed. Verifying import..."
+    if python -c "from unsloth import FastLanguageModel; print('  Unsloth import OK')" 2>&1; then
+        echo "  Training will use optimized backend (~12-16GB VRAM)."
+    else
+        echo "  WARNING: pip install succeeded but import failed."
+        echo "  Training will fall back to PEFT+bitsandbytes until this is fixed."
+    fi
 else
     echo "  Unsloth install failed. Training will use PEFT+bitsandbytes fallback."
     echo "  Note: Fallback uses ~20-24GB VRAM and is 2-5x slower."
@@ -149,6 +155,6 @@ echo "Conda env:   ${CONDA_ENV}"
 echo ""
 echo "Next steps:"
 echo "  1. Sync data:  bash slurm/sync_to_hpc.sh  (from local machine)"
-echo "  2. Train:       sbatch slurm/train_sft.sh"
-echo "  3. Evaluate:    sbatch slurm/run_inference.sh"
+echo "  2. Train:       /opt/ohpc/pub/software/slurm/24.05.2/bin/sbatch slurm/train_sft.sh"
+echo "  3. Evaluate:    /opt/ohpc/pub/software/slurm/24.05.2/bin/sbatch slurm/run_inference.sh"
 echo "============================================================"

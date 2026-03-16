@@ -11,15 +11,15 @@
 #   - SSH key configured for Cayuga
 #
 # What gets synced:
-#   UP:   scripts/, configs/, slurm/, requirements-train.txt, data/*.jsonl
-#   DOWN: models/, results/sft_eval/, logs/
+#   UP:   scripts/, configs/, slurm/, requirements-train.txt, phase-specific SFT corpora
+#   DOWN: models/, results/sft_eval/, results/source_eval/, logs/
 # ────────────────────────────────────────────────────────────────────────────
 
 set -euo pipefail
 
 # ── Configuration ──────────────────────────────────────────────────────────
 CAYUGA_USER="jak4013"
-CAYUGA_HOST="cayuga-login1.cac.cornell.edu"
+CAYUGA_HOST="${CAYUGA_HOST:-cayuga-login1}"
 REMOTE_BASE="/athena/masonlab/scratch/users/${CAYUGA_USER}/BioReview_Training"
 LOCAL_BASE="$(cd "$(dirname "$0")/.." && pwd)"
 
@@ -40,6 +40,8 @@ for arg in "$@"; do
 done
 
 REMOTE="${CAYUGA_USER}@${CAYUGA_HOST}"
+SSH_CMD=(ssh -o ControlMaster=no -o ControlPath=none)
+export RSYNC_RSH="ssh -o ControlMaster=no -o ControlPath=none"
 
 if [ "${DOWNLOAD}" = true ]; then
     # ── Download results from HPC ──────────────────────────────────────────
@@ -48,7 +50,11 @@ if [ "${DOWNLOAD}" = true ]; then
     echo "============================================================"
 
     # Create local directories (may be gitignored and absent)
-    mkdir -p "${LOCAL_BASE}/models" "${LOCAL_BASE}/results/sft_eval" "${LOCAL_BASE}/logs"
+    mkdir -p \
+        "${LOCAL_BASE}/models" \
+        "${LOCAL_BASE}/results/sft_eval" \
+        "${LOCAL_BASE}/results/source_eval" \
+        "${LOCAL_BASE}/logs"
 
     echo ""
     echo "[1/3] Downloading trained model..."
@@ -63,7 +69,14 @@ if [ "${DOWNLOAD}" = true ]; then
         "${LOCAL_BASE}/results/sft_eval/"
 
     echo ""
-    echo "[3/3] Downloading logs..."
+    echo ""
+    echo "[3/4] Downloading source-sliced evaluation results..."
+    rsync ${RSYNC_OPTS} ${DRY_RUN} \
+        "${REMOTE}:${REMOTE_BASE}/results/source_eval/" \
+        "${LOCAL_BASE}/results/source_eval/"
+
+    echo ""
+    echo "[4/4] Downloading logs..."
     rsync ${RSYNC_OPTS} ${DRY_RUN} \
         "${REMOTE}:${REMOTE_BASE}/logs/" \
         "${LOCAL_BASE}/logs/"
@@ -81,7 +94,7 @@ else
 
     # Create remote directories
     echo "[0/4] Creating remote directories..."
-    ssh ${REMOTE} "mkdir -p ${REMOTE_BASE}/{scripts,configs,slurm,data,models,logs,results/sft_eval}"
+    "${SSH_CMD[@]}" "${REMOTE}" "mkdir -p ${REMOTE_BASE}/{scripts,configs,slurm,data,data/corpus_all_nonfig,data/corpus_hi_conf,models,logs,results/sft_eval,results/source_eval}"
 
     echo ""
     echo "[1/4] Uploading scripts, configs, slurm..."
@@ -96,12 +109,26 @@ else
 
     echo ""
     echo "[2/4] Uploading SFT training data..."
-    rsync ${RSYNC_OPTS} ${DRY_RUN} \
+    if [ -d "${LOCAL_BASE}/data/corpus_all_nonfig" ]; then
+        rsync ${RSYNC_OPTS} ${DRY_RUN} \
+            "${LOCAL_BASE}/data/corpus_all_nonfig/" \
+            "${REMOTE}:${REMOTE_BASE}/data/corpus_all_nonfig/"
+    else
+        echo "  WARNING: missing local corpus_all_nonfig directory"
+    fi
+
+    if [ -d "${LOCAL_BASE}/data/corpus_hi_conf" ]; then
+        rsync ${RSYNC_OPTS} ${DRY_RUN} \
+            "${LOCAL_BASE}/data/corpus_hi_conf/" \
+            "${REMOTE}:${REMOTE_BASE}/data/corpus_hi_conf/"
+    else
+        echo "  WARNING: missing local corpus_hi_conf directory"
+    fi
+
+    # Legacy flat data files are still synced if present for backward compatibility.
+    rsync ${RSYNC_OPTS} ${DRY_RUN} --ignore-missing-args \
         "${LOCAL_BASE}/data/sft_train.jsonl" \
         "${LOCAL_BASE}/data/sft_val.jsonl" \
-        "${REMOTE}:${REMOTE_BASE}/data/"
-    # Also upload stats files if present
-    rsync ${RSYNC_OPTS} ${DRY_RUN} --ignore-missing-args \
         "${LOCAL_BASE}/data/sft_train_stats.json" \
         "${LOCAL_BASE}/data/sft_val_stats.json" \
         "${REMOTE}:${REMOTE_BASE}/data/" 2>/dev/null || true
@@ -119,7 +146,7 @@ else
     echo ""
     echo "[4/4] Uploading peer-review-benchmark (for evaluation)..."
     if [ -d "${LOCAL_BENCH}" ]; then
-        ssh ${REMOTE} "mkdir -p ${REMOTE_BENCH}/{bioreview_bench,data/splits/v3}"
+        "${SSH_CMD[@]}" "${REMOTE}" "mkdir -p ${REMOTE_BENCH}/{bioreview_bench,data/splits/v3}"
 
         # bioreview_bench package (imported via sys.path in inference script)
         echo "  Syncing bioreview_bench package..."
@@ -149,7 +176,7 @@ else
     echo "  ssh ${REMOTE}"
     echo "  cd ${REMOTE_BASE}"
     echo "  bash slurm/setup_cayuga.sh      # one-time env setup"
-    echo "  sbatch slurm/train_sft.sh       # submit training"
-    echo "  squeue -u \$USER                 # check job status"
+    echo "  /opt/ohpc/pub/software/slurm/24.05.2/bin/sbatch slurm/train_sft.sh"
+    echo "  /opt/ohpc/pub/software/slurm/24.05.2/bin/squeue -u \$USER"
     echo "============================================================"
 fi

@@ -461,9 +461,10 @@ def run_evaluation_wrapper(
     if str(bench_root) not in sys.path:
         sys.path.insert(0, str(bench_root))
 
-    # Prefer local SPECTER2
+    # Prefer local SPECTER2 (only if weight files actually exist)
     local_specter2 = Path(__file__).resolve().parents[1] / "models" / "specter2_base"
-    if local_specter2.exists() and not os.getenv("BIOREVIEW_EMBED_MODEL"):
+    has_weights = any(local_specter2.glob("*.bin")) or any(local_specter2.glob("*.safetensors"))
+    if local_specter2.exists() and has_weights and not os.getenv("BIOREVIEW_EMBED_MODEL"):
         os.environ["BIOREVIEW_EMBED_MODEL"] = str(local_specter2)
 
     from bioreview_bench.evaluate.runner import run_evaluation

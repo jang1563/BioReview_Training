@@ -1,0 +1,43 @@
+prepare_sft_data configuration
+- splits_dir: ../peer-review-benchmark/data/splits/v3
+- output_dir: data/corpus_hi_conf
+- splits: ['train', 'val']
+- token_budget: 15000
+- min_concerns: 3
+- min_resolution_confidence: 0.8
+- include_figure_issues: False
+- drop_title_only: True
+- hf_tokenizer: (none)
+- token_counter: heuristic:chars/3(conservative)
+- reviewer_py: /Users/jak4013/Dropbox/Bioinformatics/Claude/peer-review-benchmark/bioreview_bench/baseline/reviewer.py
+
+[train]
+articles total=4740 kept=700 dropped(title_only)=2 dropped(<min_concerns)=4038 bad_json=0
+concerns before=70104 after=5387 avg/article=6.87
+input tokens mean=14517.4 median=15000.0 max=15000
+top categories:
+  - missing_experiment: 1503
+  - interpretation: 909
+  - writing_clarity: 908
+  - design_flaw: 660
+  - statistical_methodology: 301
+  - prior_art_novelty: 299
+  - reagent_method_specificity: 221
+  - other: 6
+
+[val]
+articles total=838 kept=118 dropped(title_only)=3 dropped(<min_concerns)=717 bad_json=0
+concerns before=12488 after=885 avg/article=6.74
+input tokens mean=14429.7 median=15000.0 max=15000
+top categories:
+  - missing_experiment: 249
+  - interpretation: 162
+  - writing_clarity: 146
+  - design_flaw: 107
+  - prior_art_novelty: 50
+  - statistical_methodology: 48
+  - reagent_method_specificity: 32
+  - other: 1
+
+Done.
+total input articles=5578, total kept=818

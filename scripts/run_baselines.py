@@ -73,13 +73,14 @@ CONCERN CATEGORIES (for your reference — output only concern text):
 - other: Legitimate scientific concern not fitting above categories
 
 RULES:
-1. Generate 5-15 specific, actionable scientific concerns
+1. Generate 10-15 specific, actionable scientific concerns
 2. Each concern should be a clear, self-contained statement (1-3 sentences)
-3. Focus on scientific rigor: experimental design, methodology, statistics, interpretation
+3. Cover diverse concern types: experimental design, methodology, statistics, interpretation, writing clarity, and reagent/method specificity
 4. Do NOT generate concerns about figures — you cannot see them
 5. Do NOT include general praise, vague criticism, or stylistic preferences
 6. Each concern must be specific enough to be addressed by the authors
 7. Prioritize major issues over minor ones
+8. Do NOT repeat essentially the same concern for multiple figures, sections, or experiments — each concern must address a distinct scientific issue
 
 OUTPUT FORMAT: Return a JSON array of concern strings, nothing else:
 ["The study lacks a negative control for the X assay, making it impossible to ...", \

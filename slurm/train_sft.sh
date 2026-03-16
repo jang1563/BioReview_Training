@@ -34,7 +34,7 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=48G
 #SBATCH --gres=gpu:a40:1
-#SBATCH --time=06:00:00
+#SBATCH --time=40:00:00
 #SBATCH --output=/athena/masonlab/scratch/users/jak4013/BioReview_Training/logs/train_%j.log
 #SBATCH --error=/athena/masonlab/scratch/users/jak4013/BioReview_Training/logs/train_%j.err
 
@@ -42,7 +42,7 @@
 CONDA_ENV="${CONDA_ENV:-bioreview-sft}"
 SCRATCH_DIR="/athena/masonlab/scratch/users/jak4013"
 PROJECT_DIR="${SCRATCH_DIR}/BioReview_Training"
-CONFIG="${CONFIG:-configs/qwen7b_qlora.yaml}"
+CONFIG="${CONFIG:-configs/qwen3_8b_all_nonfig.yaml}"
 MAX_STEPS="${MAX_STEPS:--1}"
 DRY_RUN="${DRY_RUN:-false}"
 NO_EVAL="${NO_EVAL:-true}"
@@ -95,9 +95,18 @@ except ImportError:
     print('Backend: PEFT + bitsandbytes (fallback)')
 "
 
-# ── Verify data files ─────────────────────────────────────────────────────
+# ── Verify config + data files ────────────────────────────────────────────
 echo ""
-for f in data/sft_train.jsonl data/sft_val.jsonl "${CONFIG}"; do
+if [ ! -f "${CONFIG}" ]; then
+    echo "ERROR: Config not found: ${CONFIG}"
+    echo "  Run sync_to_hpc.sh first."
+    exit 1
+fi
+
+TRAIN_PATH=$(python -c "import yaml; cfg=yaml.safe_load(open('${CONFIG}')); print(cfg['data']['train_path'])")
+VAL_PATH=$(python -c "import yaml; cfg=yaml.safe_load(open('${CONFIG}')); print(cfg['data']['val_path'])")
+
+for f in "${TRAIN_PATH}" "${VAL_PATH}" "${CONFIG}"; do
     if [ -f "$f" ]; then
         echo "  OK: $f ($(wc -l < "$f") lines)"
     else
@@ -108,7 +117,7 @@ for f in data/sft_train.jsonl data/sft_val.jsonl "${CONFIG}"; do
 done
 
 # Quick JSONL integrity check (parse first + last line)
-for f in data/sft_train.jsonl data/sft_val.jsonl; do
+for f in "${TRAIN_PATH}" "${VAL_PATH}"; do
     python -c "
 import json, sys
 with open('$f') as fh:

@@ -56,6 +56,11 @@ def detect_chat_template_family(tokenizer) -> str:
     )
 
 
+def get_text_tokenizer(tokenizer):
+    """Normalize processor/tokenizer objects to a text tokenizer for .encode()."""
+    return getattr(tokenizer, "tokenizer", tokenizer)
+
+
 def load_config(path: Path) -> dict:
     with path.open(encoding="utf-8") as f:
         return yaml.safe_load(f)
@@ -234,6 +239,7 @@ def main() -> None:
         model, tokenizer = load_model_unsloth(mcfg, lcfg, tcfg["seed"])
     else:
         model, tokenizer = load_model_standard(mcfg, lcfg, tcfg.get("bf16", False))
+    text_tokenizer = get_text_tokenizer(tokenizer)
 
     model.print_trainable_parameters()
 
@@ -269,14 +275,14 @@ def main() -> None:
 
     # Sample verification
     sample_text = train_ds[0]["text"]
-    sample_tokens = len(tokenizer.encode(sample_text))
+    sample_tokens = len(text_tokenizer.encode(sample_text))
     print(f"sample: {len(sample_text)} chars, ~{sample_tokens} tokens")
     print(f"preview:\n{sample_text[:300]}...")
 
     if args.dry_run:
         # Compute token length distribution
         lengths = [
-            len(tokenizer.encode(train_ds[i]["text"])) for i in range(len(train_ds))
+            len(text_tokenizer.encode(train_ds[i]["text"])) for i in range(len(train_ds))
         ]
         lengths.sort()
         print(f"\nToken length distribution (train):")
@@ -295,35 +301,52 @@ def main() -> None:
 
     max_steps = args.max_steps if args.max_steps > 0 else -1
 
-    sft_config = SFTConfig(
-        output_dir=str(output_dir),
-        num_train_epochs=tcfg["num_train_epochs"] if max_steps < 0 else 1,
-        max_steps=max_steps,
-        per_device_train_batch_size=tcfg["per_device_train_batch_size"],
-        gradient_accumulation_steps=tcfg["gradient_accumulation_steps"],
-        learning_rate=tcfg["learning_rate"],
-        lr_scheduler_type=tcfg["lr_scheduler_type"],
-        warmup_ratio=tcfg["warmup_ratio"],
-        weight_decay=tcfg["weight_decay"],
-        max_grad_norm=tcfg["max_grad_norm"],
-        bf16=tcfg.get("bf16", False),
-        fp16=tcfg.get("fp16", not tcfg.get("bf16", False)),
-        seed=tcfg["seed"],
-        logging_steps=tcfg["logging_steps"],
-        save_strategy="steps" if max_steps > 0 else tcfg["save_strategy"],
-        save_steps=max(1, max_steps // 2) if max_steps > 0 else None,
-        save_total_limit=tcfg["save_total_limit"],
-        optim=tcfg["optim"],
-        max_seq_length=mcfg["max_seq_length"],
-        dataset_text_field="text",
-        packing=False,
-        eval_strategy="no"
-        if args.no_eval
-        else ("steps" if max_steps > 0 else "epoch"),
-        eval_steps=max(1, max_steps // 2) if max_steps > 0 else None,
-        per_device_eval_batch_size=1,
-        report_to="none",
+    from inspect import signature as _sig
+
+    save_strategy = "steps" if max_steps > 0 else tcfg["save_strategy"]
+    save_steps = max(1, max_steps // 2) if max_steps > 0 else tcfg.get("save_steps")
+    eval_strategy = (
+        "no" if args.no_eval else ("steps" if max_steps > 0 else tcfg.get("eval_strategy", "epoch"))
     )
+    eval_steps = max(1, max_steps // 2) if max_steps > 0 else tcfg.get("eval_steps")
+
+    sft_kwargs = {
+        "output_dir": str(output_dir),
+        "num_train_epochs": tcfg["num_train_epochs"] if max_steps < 0 else 1,
+        "max_steps": max_steps,
+        "per_device_train_batch_size": tcfg["per_device_train_batch_size"],
+        "gradient_accumulation_steps": tcfg["gradient_accumulation_steps"],
+        "learning_rate": tcfg["learning_rate"],
+        "lr_scheduler_type": tcfg["lr_scheduler_type"],
+        "warmup_ratio": tcfg["warmup_ratio"],
+        "weight_decay": tcfg["weight_decay"],
+        "max_grad_norm": tcfg["max_grad_norm"],
+        "bf16": tcfg.get("bf16", False),
+        "fp16": tcfg.get("fp16", not tcfg.get("bf16", False)),
+        "seed": tcfg["seed"],
+        "logging_steps": tcfg["logging_steps"],
+        "save_strategy": save_strategy,
+        "save_total_limit": tcfg["save_total_limit"],
+        "optim": tcfg["optim"],
+        "dataset_text_field": "text",
+        "packing": False,
+        "eval_strategy": eval_strategy,
+        "per_device_eval_batch_size": 1,
+        "report_to": "none",
+    }
+
+    if save_strategy == "steps" and save_steps is not None:
+        sft_kwargs["save_steps"] = save_steps
+    if eval_strategy == "steps" and eval_steps is not None:
+        sft_kwargs["eval_steps"] = eval_steps
+
+    sft_config_params = _sig(SFTConfig.__init__).parameters
+    if "max_seq_length" in sft_config_params:
+        sft_kwargs["max_seq_length"] = mcfg["max_seq_length"]
+    elif "max_length" in sft_config_params:
+        sft_kwargs["max_length"] = mcfg["max_seq_length"]
+
+    sft_config = SFTConfig(**sft_kwargs)
 
     # ── Build data collator for response-only loss masking ─────
     data_collator = None
@@ -345,8 +368,12 @@ def main() -> None:
                 tokenizer=tokenizer,
             )
             # Verify the template is found in a sample
-            sample_ids = tokenizer.encode(train_ds[0]["text"], add_special_tokens=False)
-            template_ids = tokenizer.encode(response_template, add_special_tokens=False)
+            sample_ids = text_tokenizer.encode(
+                train_ds[0]["text"], add_special_tokens=False
+            )
+            template_ids = text_tokenizer.encode(
+                response_template, add_special_tokens=False
+            )
             found = any(
                 sample_ids[j : j + len(template_ids)] == template_ids
                 for j in range(len(sample_ids))
