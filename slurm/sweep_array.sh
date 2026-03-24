@@ -43,16 +43,12 @@
 #SBATCH --array=1-4%2
 
 # ── Configuration ────────────────────────────────────────────────────────────
-CONDA_ENV="${CONDA_ENV:-bioreview-sft}"
 SCRATCH_DIR="${SCRATCH_DIR:-/path/to/scratch}"
 PROJECT_DIR="${SCRATCH_DIR}/BioReview_Training"
 MANIFEST="${MANIFEST:-configs/sweep/stage1_14b/sweep_manifest.csv}"
 SPLIT="${SPLIT:-val}"
 EVALUATE="${EVALUATE:-true}"
 SWEEP_CSV="${SWEEP_CSV:-results/sweep_results.csv}"
-
-export HF_HOME="${SCRATCH_DIR}/huggingface"
-export TORCH_HOME="${SCRATCH_DIR}/cache/torch"
 
 echo "============================================================"
 echo "BioReview SFT Sweep — Task ${SLURM_ARRAY_TASK_ID}"
@@ -65,14 +61,9 @@ echo "Start time:   $(date)"
 echo "============================================================"
 
 # ── Environment setup ────────────────────────────────────────────────────────
-CONDA_BASE="${CONDA_PREFIX:-/path/to/conda}"
-source "${CONDA_BASE}/etc/profile.d/conda.sh" \
-    || { echo "ERROR: conda not found"; exit 1; }
-conda activate "${CONDA_ENV}" \
-    || { echo "ERROR: conda env not found"; exit 1; }
-
 cd "${PROJECT_DIR}" \
     || { echo "ERROR: project dir not found"; exit 1; }
+source slurm/env_setup.sh
 
 mkdir -p logs results/sft_eval
 

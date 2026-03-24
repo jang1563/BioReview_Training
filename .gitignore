@@ -40,6 +40,11 @@ venv/
 .DS_Store
 Thumbs.db
 
+# HPC diagnostic / ad-hoc files
+diag_g*.log
+hpc_email_*.txt
+hpc_issue_report_*.md
+
 # Jupyter
 .ipynb_checkpoints/
 

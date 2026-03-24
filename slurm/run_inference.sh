@@ -27,7 +27,6 @@
 #SBATCH --error=${SCRATCH_DIR:-/path/to/scratch}/BioReview_Training/logs/inference_%j.err
 
 # ── Configuration (overridable via sbatch --export) ────────────────────────
-CONDA_ENV="${CONDA_ENV:-bioreview-sft}"
 SCRATCH_DIR="${SCRATCH_DIR:-/path/to/scratch}"
 PROJECT_DIR="${SCRATCH_DIR}/BioReview_Training"
 MODEL_DIR="${MODEL_DIR:-models/qwen3_8b_all_nonfig_v1}"
@@ -36,10 +35,6 @@ MAX_ARTICLES="${MAX_ARTICLES:-0}"
 EVALUATE="${EVALUATE:-true}"
 TAG="${TAG:-}"
 RESUME="${RESUME:-false}"
-
-# HuggingFace cache → scratch (must match ~/.bashrc HF_HOME)
-export HF_HOME="${SCRATCH_DIR}/huggingface"
-export TORCH_HOME="${SCRATCH_DIR}/cache/torch"
 
 echo "============================================================"
 echo "BioReview SFT Inference — Cayuga"
@@ -56,15 +51,9 @@ echo "Start time:   $(date)"
 echo "============================================================"
 
 # ── Environment setup ──────────────────────────────────────────────────────
-# Source conda directly (bashrc may skip non-interactive shells)
-CONDA_BASE="${CONDA_BASE:-${CONDA_PREFIX:-/path/to/conda}}"
-source "${CONDA_BASE}/etc/profile.d/conda.sh" \
-    || { echo "ERROR: conda not found at ${CONDA_BASE}"; exit 1; }
-conda activate "${CONDA_ENV}" \
-    || { echo "ERROR: conda env '${CONDA_ENV}' not found."; exit 1; }
-
 cd "${PROJECT_DIR}" \
     || { echo "ERROR: project dir not found: ${PROJECT_DIR}"; exit 1; }
+source slurm/env_setup.sh
 
 mkdir -p logs results/sft_eval
 

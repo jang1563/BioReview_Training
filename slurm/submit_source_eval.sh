@@ -11,8 +11,6 @@ CAYUGA_USER="${USER}"
 CAYUGA_HOST="${HPC_LOGIN:-cayuga-login1}"
 REMOTE_BASE="/athena/masonlab/scratch/users/${CAYUGA_USER}/BioReview_Training"
 SLURM_BIN="/opt/ohpc/pub/software/slurm/24.05.2/bin"
-CONDA_BASE="${CONDA_PREFIX:-/path/to/conda}"
-CONDA_ENV="bioreview-sft"
 
 CONFIG="configs/qwen3_8b_all_nonfig.yaml"
 SPLIT="val"
@@ -64,7 +62,7 @@ SSH_CMD=(ssh -o ControlMaster=no -o ControlPath=none)
 
 if [ -z "${MODEL_DIR}" ]; then
     MODEL_DIR="$(
-    "${SSH_CMD[@]}" "${REMOTE}" "source '${CONDA_BASE}/etc/profile.d/conda.sh' && conda activate '${CONDA_ENV}' && cd '${REMOTE_BASE}' && python - <<'PY'
+    "${SSH_CMD[@]}" "${REMOTE}" "cd '${REMOTE_BASE}' && source slurm/env_setup.sh && python - <<'PY'
 from pathlib import Path
 import yaml
 cfg = yaml.safe_load(Path('${CONFIG}').read_text())

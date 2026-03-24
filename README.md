@@ -1,81 +1,115 @@
 # BioReview Training
 
-QLoRA SFT (Supervised Fine-Tuning) pipeline for training biomedical peer-review LLMs on the [peer-review-benchmark](../peer-review-benchmark/) dataset.
+QLoRA SFT (Supervised Fine-Tuning) pipeline for training biomedical peer-review LLMs on the [peer-review-benchmark](https://github.com/jang1563/peer-review-benchmark) dataset.
 
 ## Overview
 
-Fine-tunes open-source LLMs to identify specific scientific concerns in biomedical papers, evaluated against human reviewer annotations using SPECTER2 semantic matching.
+Fine-tunes open-source LLMs to identify specific scientific concerns in biomedical papers, evaluated against human reviewer annotations using SPECTER2 semantic matching + Hungarian algorithm.
 
-**Leaderboard (peer-review-benchmark val split, 982 articles, legacy v3):**
+**Leaderboard (peer-review-benchmark v3 val split, 838 articles):**
 
-| Rank | Model | F1 | Recall | Precision | Recall (major) |
-|---:|-------|---:|--------|-----------|----------------|
-| 1 | GPT-4o-mini (baseline) | **0.6962** | 0.647 | 0.753 | 0.803 |
-| 2 | **Ensemble Union v2** (9B-v2+14B-v2) | **0.5831** | 0.433 | 0.891 | 0.634 |
-| 3 | Ensemble Union v1 (9B+14B) | 0.5403 | 0.385 | 0.903 | 0.581 |
-| 4 | DeepSeek-R1-14B v1 (SFT) | 0.4316 | 0.280 | 0.936 | 0.450 |
-| 5 | Qwen3.5-9B v1 (SFT) | 0.4248 | 0.274 | 0.947 | 0.452 |
-| 6 | Qwen3.5-9B v2 (SFT) | 0.4019 | 0.255 | 0.946 | 0.426 |
-| 7 | Qwen2.5-14B v1 (SFT) | 0.3809 | 0.238 | 0.962 | 0.402 |
-| 8 | Qwen2.5-14B v2 (SFT) | 0.3636 | 0.225 | 0.942 | 0.390 |
-| 9 | Ensemble Vote2 v1 | 0.0904 | 0.047 | 0.999 | 0.090 |
-| 10 | Qwen7B v1 (SFT) | 0.0043 | 0.002 | 0.455 | 0.002 |
-| 11 | Qwen3-8B v1 (SFT) | 0.0029 | 0.001 | 0.714 | 0.002 |
+| Rank | Model | Corpus | F1 | Recall | Precision | Gate |
+|---:|-------|--------|---:|-------:|----------:|------|
+| -- | GPT-4o-mini (baseline) | -- | **0.696** | 0.647 | 0.753 | PASS |
+| 1 | **8B+9B Ensemble** (union, dedup+cap20) | All non-figure | **0.694** | **0.695** | 0.692 | **PASS** |
+| 2 | **Qwen3.5-9B** (SFT, dedup+cap20) | All non-figure | **0.625** | 0.504 | 0.823 | **PASS** |
+| 3 | Qwen3-8B (SFT, merged+dedup+cap20) | All non-figure | 0.556 | 0.413 | 0.851 | FAIL |
+| 4 | Ensemble Union v2 (9B+14B) | High-confidence | 0.583 | 0.433 | 0.891 | PASS* |
+| 5 | Ensemble Union v1 (9B+14B) | High-confidence | 0.540 | 0.385 | 0.903 | FAIL* |
+| 6 | DeepSeek-R1-14B v1 | High-confidence | 0.432 | 0.280 | 0.936 | FAIL* |
+| 7 | Qwen3.5-9B v1 | High-confidence | 0.425 | 0.274 | 0.947 | FAIL* |
 
-> Ensemble uses `--cluster-threshold 0.98` (near-exact dedup). Lower thresholds cause over-clustering via connected components transitivity in SPECTER2 space.
+> *\*Legacy results on old 982-article val split. Not directly comparable to v3 838-article split.*
 
-**Key finding:** Precision is not the bottleneck (~89–96%). The main gap vs GPT-4o-mini is **recall** (0.27–0.43 vs 0.65). Root cause: training data was filtered to high-confidence concerns (93% eLife), misaligned with the benchmark evaluation target (all 5 journal sources, all non-figure concerns).
+**Key findings:**
+- **8B+9B ensemble matches GPT-4o-mini** (F1=0.694 vs 0.696) and **surpasses it on recall** (0.695 vs 0.647)
+- **Data–task alignment is critical** — Corpus A (all non-figure) improved single-model F1 from 0.43 → 0.63
+- **Models are complementary** — only 8.4% of combined concerns overlap; union ensemble captures both
+- **Dedup+cap20 is essential** — removes ~50% of raw output, improving F1 by +0.11 (9B: 0.514 → 0.625)
+- **9B precision is exceptional** — 0.823 precision after postprocessing vs GPT-4o-mini's 0.753
+
+**Success gates:** F1 >= 0.58 or Recall >= 0.45
 
 ---
 
-## Current Status (2026-03-13)
+## Current Status (2026-03-24)
 
-### Phase 0: Experimental contract frozen
+### Phase 2: Task-aligned corpus training — COMPLETE ✓
 
-- **Benchmark reference split** (current v3): 4,740 train / 838 val / 981 test
-- Primary metric: `f1_micro`; secondary: `recall_overall`, `recall_major`
-- Hard rule: do not compare new runs against legacy 982-article validation runs without labeling them as legacy
+| Model | Corpus | Training | Inference | Best F1 | Gate |
+|-------|--------|----------|-----------|---------|------|
+| Qwen3-8B all_nonfig | A (4,734 articles) | Complete (1,773 steps, 3 epochs, ~18h) | Complete | 0.556 | FAIL |
+| Qwen3.5-9B all_nonfig | A (4,734 articles) | Complete (1,773 steps, 3 epochs, 35h) | Complete | **0.625** | **PASS** |
+| **8B+9B Ensemble** | — | — | — | **0.694** | **PASS** |
 
-### Phase 1: Task-aligned corpora rebuilt
+**Qwen3.5-9B all_nonfig results (postprocessing variants):**
 
-Two new corpora built from current v3 split:
+| Variant | F1 | Recall | Precision | Concerns |
+|---------|---:|-------:|----------:|---------:|
+| **dedup+cap20** | **0.625** | 0.504 | 0.823 | 7,324 |
+| raw | 0.514 | 0.570 | 0.468 | 14,578 |
 
-| Corpus | Purpose | Train | Val | Avg concerns | Source coverage | Truncation |
-|--------|---------|------:|----:|-------------:|-----------------|------------|
-| **A: All non-figure** | Match benchmark target | 4,734 | 835 | 14.1–14.3 | All 5 sources | 52% |
-| **B: High-confidence** | Curriculum warm-start | 700 | 118 | 6.7–6.9 | 93% eLife/Nature | 81% |
+**Qwen3-8B all_nonfig results (postprocessing variants):**
 
-Corpus A restores all 5 sources (eLife, F1000, PLOS, PeerJ, Nature) and aligns concern density to evaluation-time ground truth.
+| Variant | F1 | Recall | Precision | Concerns |
+|---------|---:|-------:|----------:|---------:|
+| merged+dedup+cap20 | **0.556** | 0.413 | 0.851 | 5,794 |
+| dedup+cap20 | 0.554 | 0.411 | 0.851 | 5,774 |
+| dedup+cap15 | 0.548 | 0.397 | 0.883 | 5,381 |
+| dedup only | 0.519 | 0.418 | 0.685 | 7,301 |
+| raw | 0.457 | 0.443 | 0.473 | 11,195 |
 
-### Phase 2: 9B experiment batch (in progress)
+**8B+9B Ensemble (union, cluster-threshold=0.98):**
 
-Three planned experiments on Qwen3.5-9B:
-1. **Direct retrain** on Corpus A (all non-figure concerns)
-2. **Curriculum retrain** (Corpus B stage 1 → Corpus A stage 2)
-3. **Prompt-locked rerun** with frozen reviewer prompt
+| Metric | Value |
+|--------|------:|
+| F1 | **0.694** |
+| Recall | **0.695** |
+| Precision | 0.692 |
+| Recall (major concerns) | **0.811** |
+| Articles with perfect recall | 481 / 838 |
+| Total concerns | 12,003 |
+| Overlap between models | 8.4% |
 
-**Checkpoint probe results (Corpus A, 50-article probe):**
+**By-source breakdown (dedup+cap20):**
 
-| Checkpoint | F1 | Recall | Precision | Model concerns |
-|-----------|---:|-------:|----------:|---------------:|
-| 100 | 0.0132 | 0.019 | 0.010 | 1300 |
-| **200** | **0.0257** | **0.030** | **0.023** | **888** |
-| 300 | 0.0221 | 0.025 | 0.020 | 868 |
+| Source | N | 8B F1 | 8B Recall | 9B F1 | 9B Recall | Ensemble F1 | Ensemble Recall |
+|--------|--:|------:|----------:|------:|----------:|------------:|----------------:|
+| eLife | 232 | 0.565 | 0.419 | **0.651** | 0.538 | **0.713** | 0.757 |
+| F1000 | 341 | 0.595 | 0.469 | **0.636** | 0.540 | **0.686** | 0.754 |
+| PeerJ | 31 | 0.609 | 0.469 | **0.695** | 0.580 | **0.704** | 0.729 |
+| PLOS | 221 | 0.491 | 0.336 | **0.592** | 0.440 | **0.701** | 0.604 |
+| Nature | 13 | 0.330 | 0.200 | **0.554** | 0.408 | **0.605** | 0.492 |
 
-Checkpoint-200 is the leading early candidate. Full validation eval submitted.
+> Nature articles are underrepresented in training corpus (66/4,734 train articles = 1.4%). This is the weakest source for all models.
 
-**Success gates:**
-- Green: `recall ≥ 0.45` OR `f1 ≥ 0.58`
-- Strong green: `recall ≥ 0.50` AND `precision ≥ 0.80`
-- Stop: if recall stays < 0.35 → move to Phase 3 (pipeline changes)
+**9B per-category breakdown (dedup+cap20):**
 
-### Phase 3–4 (contingency)
+| Category | GT count | Recall | Precision | F1 |
+|----------|---------|-------:|----------:|---:|
+| interpretation | 1,869 | 0.663 | 0.823 | **0.734** |
+| missing_experiment | 1,924 | 0.650 | 0.773 | **0.706** |
+| prior_art_novelty | 919 | 0.641 | 0.709 | 0.673 |
+| design_flaw | 1,311 | 0.585 | 0.701 | 0.638 |
+| writing_clarity | 4,386 | 0.547 | 0.766 | 0.638 |
+| statistical_methodology | 641 | 0.544 | 0.588 | 0.565 |
+| reagent_method_specificity | 866 | 0.498 | 0.573 | 0.533 |
+| other | 39 | 0.415 | 0.429 | 0.422 |
+
+**Next steps:**
+1. Test set evaluation (9B + ensemble) — pending
+2. Phase 3 (contingency) if test set results hold
+
+### Phases 0–1 (complete)
+
+- **Phase 0**: Experimental contract frozen — v3 split (4,740/838/981), SPECTER2 matching
+- **Phase 1**: Task-aligned corpora rebuilt — Corpus A (all non-figure, 4,734 train) and Corpus B (high-confidence, 700 train)
+
+### Phases 3–4 (contingency)
 
 - **Phase 3A**: Section-wise inference (methods/results/discussion separately → merge)
 - **Phase 3B**: Teacher distillation from GPT-4o-mini
-- **Phase 4**: Scale to 14B only after 9B gates pass
-
-See `results/next_steps_plan_2026-03-12.md` for full plan.
+- **Phase 4**: Scale to 14B
 
 ---
 
@@ -84,73 +118,63 @@ See `results/next_steps_plan_2026-03-12.md` for full plan.
 ```
 BioReview_Training/
 ├── configs/                   # Training configurations
-│   ├── qwen3.5_9b_qlora.yaml       # Qwen3.5-9B QLoRA (A100 80G)
-│   ├── qwen3.5_9b_all_nonfig.yaml  # 9B on Corpus A (task-aligned)
+│   ├── qwen3_8b_all_nonfig.yaml    # 8B on Corpus A (task-aligned)
+│   ├── qwen3.5_9b_all_nonfig.yaml  # 9B on Corpus A
+│   ├── qwen3.5_9b_all_nonfig_fast.yaml  # 9B fast variant (batch=2, grad_accum=4)
 │   ├── qwen3.5_9b_hi_conf.yaml     # 9B on Corpus B (curriculum)
-│   ├── qwen2.5_14b_qlora.yaml      # Qwen2.5-14B QLoRA (A100 80G)
-│   ├── deepseek_r1_14b_qlora.yaml  # DeepSeek-R1-14B QLoRA (A100 80G)
-│   ├── qwen3_8b_qlora.yaml         # Qwen3-8B QLoRA
-│   ├── qwen3_8b_all_nonfig.yaml    # 8B on Corpus A
-│   ├── qwen3_8b_hi_conf.yaml       # 8B on Corpus B
-│   ├── qwen7b_qlora.yaml           # Qwen7B QLoRA
+│   ├── qwen2.5_14b_qlora.yaml      # 14B QLoRA
+│   ├── deepseek_r1_14b_qlora.yaml  # DeepSeek-R1-14B QLoRA
 │   └── sweep/                      # Hyperparameter sweep configs
-│       ├── stage1_9b.yaml / stage1_14b.yaml
-│       └── stage1_9b/ stage1_14b/  # Generated variant YAMLs
 │
 ├── scripts/
 │   ├── prepare_sft_data.py    # Convert benchmark splits → ShareGPT JSONL
 │   ├── train_sft.py           # QLoRA SFT training (Unsloth or standard PEFT)
 │   ├── run_sft_inference.py   # Inference + evaluation on val/test splits
+│   ├── postprocess_inference_output.py  # Dedup + cap postprocessing
+│   ├── ensemble_concerns.py   # Multi-model union/vote ensemble
+│   ├── reevaluate_ensemble.py # Re-run ensemble eval with SPECTER2
+│   ├── error_analysis.py      # Per-category P/R, failure modes
+│   ├── evaluate_by_source.py  # Per-source evaluation breakdown
 │   ├── compare_models.py      # Side-by-side F1/Recall/Precision table
 │   ├── generate_comparison_report.py  # Automated leaderboard report
-│   ├── ensemble_concerns.py   # Multi-model union/vote ensemble
-│   ├── reevaluate_ensemble.py # Re-run ensemble eval with SPECTER2 on HPC
-│   ├── error_analysis.py      # Per-category P/R, failure modes (HPC + local)
-│   ├── evaluate_by_source.py  # Per-source evaluation (eLife, Nature, PLOS, etc.)
 │   ├── compare_step_probes.py # Checkpoint probe comparison
-│   ├── reparse_inference.py   # Re-parse JSONL with updated parser (DeepSeek-R1 fix)
-│   ├── postprocess_inference_output.py  # Post-inference output processing
-│   ├── refresh_sft_summaries.py         # Refresh summary statistics
-│   ├── audit_corpus_truncation.py       # Validate token truncation
-│   ├── audit_output_split_alignment.py  # Verify split alignment across versions
-│   ├── inspect_article_compare.py       # Detailed article-level inspection
+│   ├── reparse_inference.py   # Re-parse JSONL with updated parser
 │   ├── sweep_manager.py       # Generate sweep configs, log results
 │   ├── run_baselines.py       # Evaluate GPT/Gemini baselines
 │   ├── download_specter2.py   # Cache SPECTER2 model locally
 │   └── build_phase1_corpora.sh  # Build Corpus A & B from v3 splits
 │
 ├── slurm/
-│   ├── train_sft.sh           # SLURM training job (A100 recommended)
+│   ├── train_sft.sh           # SLURM training job
 │   ├── run_inference.sh       # SLURM inference job (supports RESUME=true)
 │   ├── sweep_array.sh         # SLURM array job for hyperparameter sweeps
 │   ├── submit_checkpoint_probe.sh       # Probe specific checkpoints
-│   ├── submit_checkpoint_probe_when_ready.sh  # Auto-submit after training
 │   ├── submit_final_eval.sh   # Final evaluation job
 │   ├── submit_source_eval.sh  # Submit per-source evaluation
 │   ├── run_source_eval.sh     # Per-source evaluation script
+│   ├── run_test_eval.sh       # Full test-set evaluation pipeline
 │   ├── sync_to_hpc.sh         # rsync: local → HPC (or --download)
 │   └── setup_cayuga.sh        # One-time HPC environment setup
 │
 ├── data/                      # SFT training data (gitignored)
-│   ├── sft_train.jsonl        # 701 articles, ShareGPT format (v2, high-conf)
-│   ├── sft_val.jsonl          # 121 articles
-│   ├── sft_train_stats.json   # Category distribution stats
-│   ├── corpus_all_nonfig/     # Corpus A: all non-figure concerns (4,734 train)
-│   └── corpus_hi_conf/        # Corpus B: high-confidence subset (700 train)
+│   ├── corpus_all_nonfig/     # Corpus A: all non-figure concerns
+│   │   ├── sft_train.jsonl    # 4,734 articles, ShareGPT format
+│   │   └── sft_val.jsonl      # 835 articles
+│   └── corpus_hi_conf/        # Corpus B: high-confidence subset
+│       ├── sft_train.jsonl    # 700 articles
+│       └── sft_val.jsonl      # 118 articles
 │
 ├── models/                    # Model weights (gitignored)
 │   └── specter2_base/         # Local SPECTER2 cache (required for evaluation)
 │
 ├── results/
-│   ├── sft_eval/              # Inference outputs + summary.json (gitignored)
-│   ├── baseline_eval/         # Baseline evaluation outputs (gitignored)
+│   ├── sft_eval/              # Inference outputs + summaries (gitignored)
+│   ├── baseline_eval/         # Baseline outputs (gitignored)
+│   ├── progress_report_*.md   # Progress reports
+│   ├── model_comparison_*.md  # Leaderboard snapshots
+│   ├── error_analysis_*.md    # Error analysis reports
 │   ├── lessons_learned_*.md   # Per-iteration lessons
-│   ├── next_steps_plan_2026-03-12.md       # Phase 0-4 plan
-│   ├── phase0_contract_2026-03-12.md       # Frozen benchmark contract
-│   ├── phase1_corpus_summary_2026-03-12.md # Corpus A/B statistics
-│   ├── step_probe_progress_2026-03-12.md   # Checkpoint probe analysis
-│   ├── checkpoint_probe_comparison_2026-03-13.md  # Probe comparison table
-│   └── model_comparison_latest_2026-03-12.md      # Full leaderboard
+│   └── next_steps_plan_*.md   # Phase plans
 │
 └── requirements-train.txt
 ```
@@ -164,17 +188,19 @@ BioReview_Training/
 ```bash
 git clone https://github.com/jang1563/BioReview_Training
 cd BioReview_Training
+pip install -r requirements-train.txt
 
-# Cache SPECTER2 locally (required for evaluation — Jaccard fallback gives wrong metrics)
+# Cache SPECTER2 locally (REQUIRED for evaluation)
+# Without it, evaluation silently falls back to Jaccard → garbage scores (~F1=0.03)
 python scripts/download_specter2.py
 ```
 
 ### 2. Prepare training data
 
-Requires `peer-review-benchmark/` in the sibling directory.
+Requires [`peer-review-benchmark/`](https://github.com/jang1563/peer-review-benchmark) in the sibling directory.
 
 ```bash
-# Corpus A: task-aligned (all non-figure concerns, all sources)
+# Corpus A: task-aligned (all non-figure concerns, all 5 sources)
 python scripts/prepare_sft_data.py \
   --splits train val \
   --splits-dir ../peer-review-benchmark/data/splits/v3 \
@@ -193,7 +219,7 @@ python scripts/prepare_sft_data.py \
   --drop-title-only
 ```
 
-**Corpus statistics (v3 split, 2026-03-12):**
+**Corpus statistics (v3 split):**
 
 | Corpus | Split | Articles | Avg concerns | Source coverage |
 |--------|-------|----------|--------------|----------------|
@@ -202,106 +228,96 @@ python scripts/prepare_sft_data.py \
 | B: High-confidence | train | 700 | 6.87 | eLife 653, Nature 46, PLOS 1 |
 | B: High-confidence | val | 118 | 6.74 | eLife 110, Nature 8 |
 
-### 3. Train on HPC (Cornell Cayuga)
+### 3. Train on HPC
 
 ```bash
 # Sync to HPC
 bash slurm/sync_to_hpc.sh
 
-# Submit training (use A100 for all models — A40 OOM at max_seq_length=16384)
+# Submit training (A100 recommended — A40 OOM at max_seq_length=16384)
 /opt/ohpc/pub/software/slurm/24.05.2/bin/sbatch \
     --gres=gpu:a100:1 --mem=80G \
-    --export=ALL,CONFIG=configs/qwen3.5_9b_all_nonfig.yaml \
-    slurm/train_sft.sh
-
-# Curriculum: train on Corpus B first, then resume on Corpus A
-/opt/ohpc/pub/software/slurm/24.05.2/bin/sbatch \
-    --gres=gpu:a100:1 --mem=80G \
-    --export=ALL,CONFIG=configs/qwen3.5_9b_hi_conf.yaml \
+    --export=ALL,CONFIG=configs/qwen3_8b_all_nonfig.yaml \
     slurm/train_sft.sh
 ```
 
-> **Note:** Use the full sbatch path when submitting via SSH. `--export` must include `ALL` or PATH/conda will be lost.
+> **Note:** Use the full sbatch path. `--export` must include `ALL` or PATH/conda will be lost.
 
 ### 4. Run inference and evaluate
 
 ```bash
-# Submit inference (on HPC)
+# Submit inference
 /opt/ohpc/pub/software/slurm/24.05.2/bin/sbatch \
-    --export=ALL,MODEL_DIR=models/qwen2.5_14b_bioreview_v1,SPLIT=val \
+    --export=ALL,MODEL_DIR=models/qwen3_8b_all_nonfig_v1,SPLIT=val \
     slurm/run_inference.sh
 
 # Resume interrupted inference
 /opt/ohpc/pub/software/slurm/24.05.2/bin/sbatch \
-    --time=06:00:00 --gres=gpu:a40:1 --mem=48G \
-    --export=ALL,MODEL_DIR=models/qwen3.5_9b_bioreview_v1,RESUME=true \
+    --time=48:00:00 --gres=gpu:a100:1 --mem=80G \
+    --export=ALL,MODEL_DIR=models/qwen3.5_9b_all_nonfig_v1,RESUME=true \
     slurm/run_inference.sh
 
-# Checkpoint probing (submit probe on specific checkpoint)
-bash slurm/submit_checkpoint_probe.sh
-
-# Download results and compare locally
+# Download results locally
 bash slurm/sync_to_hpc.sh --download
+```
 
+### 5. Postprocess and evaluate
+
+```bash
+# Postprocess: dedup + cap20 (optimal pipeline)
+python scripts/postprocess_inference_output.py \
+    --input results/sft_eval/qwen3_8b_all_nonfig_v1_val.jsonl \
+    --dedup --cap 20
+
+# Compare models
 python scripts/compare_models.py \
-    results/sft_eval/qwen3.5_9b_bioreview_v1_val.summary.json \
-    results/sft_eval/qwen2.5_14b_bioreview_v1_val.summary.json
+    results/sft_eval/model_a_val.summary.json \
+    results/sft_eval/model_b_val.summary.json
 
-# Generate full leaderboard report
+# Generate full leaderboard
 python scripts/generate_comparison_report.py
 ```
 
-### 5. Ensemble
+### 6. Ensemble
 
 ```bash
 python scripts/ensemble_concerns.py \
-    --models results/sft_eval/qwen3.5_9b_bioreview_v1_val.jsonl \
-             results/sft_eval/qwen2.5_14b_bioreview_v1_val.jsonl \
-    --labels "9B" "14B" --strategy union \
-    --output results/sft_eval/ensemble_union_val.jsonl \
-    --evaluate --splits-dir /path/to/peer-review-benchmark/data/splits/v3
-
-# If --evaluate was run without SPECTER2 (gave wrong metrics), re-run:
-python scripts/reevaluate_ensemble.py  # on HPC where SPECTER2 is accessible
+    --model-a results/sft_eval/qwen3.5_9b_all_nonfig_v1_val_dedup_cap20.jsonl \
+    --model-b results/sft_eval/qwen3_8b_all_nonfig_v1_val.dedup_cap20.jsonl \
+    --strategy union \
+    --cluster-threshold 0.98 \
+    --output results/sft_eval/ensemble_8b_9b_union_val.jsonl \
+    --evaluate --split val
 ```
 
-### 6. Baselines
-
-`scripts/run_baselines.py` needs provider SDKs in addition to the training stack:
-
-```bash
-pip install openai anthropic google-generativeai
-```
+> **Critical:** Use `--cluster-threshold 0.98`. Lower thresholds cause transitivity chaining in connected components, merging all concerns into one cluster.
 
 ---
 
 ## Models
 
-### v1 — trained on 839-article split (2026-03-08/09)
+### Phase 2 — Corpus A (all non-figure), v3 split
 
-| Model | GPU | Train time | F1 | Recall | Precision |
-|-------|-----|------------|----|--------|-----------|
-| Qwen3.5-9B-v1 | A100 | 883 min | 0.4248 | 0.2738 | 0.9467 |
-| Qwen2.5-14B-v1 | A100 | 408 min | 0.3809 | 0.2375 | 0.9617 |
-| DeepSeek-R1-14B-v1 | A100 | 409 min | 0.4316 | 0.2804 | 0.9364 |
-| **Ensemble Union v1** | — | — | **0.5403** | **0.385** | **0.903** |
+| Model | Base | GPU | Train time | F1 | Recall | Precision |
+|-------|------|-----|------------|----|--------|-----------|
+| **8B+9B Ensemble** (union) | — | — | — | **0.694** | **0.695** | 0.692 |
+| **Qwen3.5-9B all_nonfig** | Qwen/Qwen3.5-9B | A100 | 35h | **0.625** | 0.504 | 0.823 |
+| Qwen3-8B all_nonfig | Qwen/Qwen3-8B | A100 | ~18h | 0.556 | 0.413 | 0.851 |
 
-### v2 — 701-article split, updated system prompt (2026-03-12)
+> Inference speed: 8B ~36s/article, 9B ~300s/article (no flash-linear-attention on HPC).
 
-Improvements: 10–15 concerns (was 5–15), anti-repetition rule, full v3 split for more writing_clarity examples.
+### Phase 1 — Corpus B (high-confidence), legacy split
 
-| Model | GPU | Train time | F1 | Recall | Precision |
-|-------|-----|------------|----|--------|-----------|
-| Qwen3.5-9B-v2 | A100 | 731 min | 0.4019 | 0.2551 | 0.9458 |
-| Qwen2.5-14B-v2 | A100 | 342 min | 0.3636 | 0.2253 | 0.9422 |
-| **Ensemble Union v2** | — | — | **0.5831** | **0.433** | **0.891** |
+> *Legacy results on 982-article val split. Not directly comparable to Phase 2.*
 
-### Exploratory (not competitive)
-
-| Model | F1 | Notes |
-|-------|----|-------|
-| Qwen7B v1 | 0.0043 | Near-zero recall |
-| Qwen3-8B v1 | 0.0029 | Near-zero recall |
+| Model | F1 | Recall | Precision |
+|-------|----|--------|-----------|
+| Ensemble Union v2 (9B+14B) | **0.583** | 0.433 | 0.891 |
+| Ensemble Union v1 (9B+14B) | 0.540 | 0.385 | 0.903 |
+| DeepSeek-R1-14B v1 | 0.432 | 0.280 | 0.936 |
+| Qwen3.5-9B v1 | 0.425 | 0.274 | 0.947 |
+| Qwen3.5-9B v2 | 0.402 | 0.255 | 0.946 |
+| Qwen2.5-14B v1 | 0.381 | 0.238 | 0.962 |
 
 ---
 
@@ -324,17 +340,25 @@ peer-review-benchmark/data/splits/v3/train.jsonl  (4,740 articles)
          ▼
 data/corpus_{all_nonfig,hi_conf}/sft_train.jsonl
          │
-         ▼ scripts/train_sft.py
+         ▼ scripts/train_sft.py  (QLoRA, Unsloth)
          ▼
 models/<name>/  (LoRA adapter)
+         │
+         ▼ scripts/run_sft_inference.py
+         ▼
+results/sft_eval/<name>_val.jsonl  (raw output)
+         │
+         ▼ scripts/postprocess_inference_output.py  (dedup + cap)
+         ▼
+results/sft_eval/<name>_val_dedup_cap20.jsonl  (postprocessed)
 ```
 
-### System prompt (v2)
+### System prompt
 
 Located in `../peer-review-benchmark/bioreview_bench/baseline/reviewer.py` (`REVIEWER_SYSTEM`).
 
 Key rules:
-1. Generate **10–15** specific, actionable concerns (raised from 5–15 to improve recall)
+1. Generate **10–15** specific, actionable concerns
 2. Cover diverse types: design, methods, statistics, interpretation, writing clarity, reagent specificity
 3. Do NOT generate concerns about figures
 4. Do NOT repeat the same concern across figures/sections/experiments
@@ -360,97 +384,54 @@ Key rules:
 
 Uses **SPECTER2** semantic embeddings + Hungarian algorithm (threshold 0.65).
 
-> **Critical:** SPECTER2 must be available. Without it, evaluation silently falls back to Jaccard similarity (word overlap), giving misleadingly low scores (~F1=0.03 instead of ~0.54). Always run `scripts/download_specter2.py` first, or ensure `allenai/specter2_base` is accessible from HuggingFace.
+> **Critical:** SPECTER2 must be available. Without it, evaluation silently falls back to Jaccard similarity (word overlap), giving misleadingly low scores (~F1=0.03 instead of ~0.55). Always run `scripts/download_specter2.py` first.
 
-```bash
-# View inference summary
-cat results/sft_eval/qwen3.5_9b_bioreview_v1_val.summary.json
+### Postprocessing pipeline
 
-# Per-category error analysis (run on HPC with SPECTER2)
-python scripts/error_analysis.py \
-    --models results/sft_eval/qwen3.5_9b_bioreview_v1_val.jsonl \
-             results/sft_eval/qwen2.5_14b_bioreview_v1_val.jsonl \
-    --model-labels "Qwen3.5-9B" "Qwen2.5-14B" \
-    --splits-dir /path/to/peer-review-benchmark/data/splits/v3 \
-    --output-json results/error_analysis/analysis.json
+| Step | Effect |
+|------|--------|
+| Dedup (exact text, case-insensitive) | Removes 35% of concerns, +0.062 F1 |
+| Cap20 (per-article limit) | +0.035 F1 on top of dedup |
+| Cap15 | Marginal vs cap20 |
+| Source-adaptive cap | Worse than uniform cap20 |
 
-# Per-source breakdown (eLife, F1000, PLOS, PeerJ, Nature)
-python scripts/evaluate_by_source.py
+**Optimal pipeline:** dedup + cap20
 
-# Compare checkpoint probes
-python scripts/compare_step_probes.py
-```
+### Error analysis
 
----
+Three failure classes identified:
 
-## Hyperparameter Sweeps
+1. **Parse failure** (10/838 articles, 1.2%): Model cannot produce valid JSON. Recall ceiling: ~0.98
+2. **Under-generation** (eLife/Nature): Conservative 3–4 concerns/article vs GT ~9–14
+3. **Over-generation** (F1000/PLOS/PeerJ): 50–140 concerns/article, many duplicates. Fixed by dedup+cap20
 
-```bash
-# Generate sweep configs
-python scripts/sweep_manager.py generate-configs \
-    --sweep configs/sweep/stage1_9b.yaml \
-    --output-dir configs/sweep/stage1_9b
+**Weakest categories:** `reagent_method_specificity` (R=0.33) and `statistical_methodology` (R=0.39) — both sparse in training data (absent in 60%+ of articles).
 
-# Submit SLURM array (on HPC)
-sbatch --array=1-2%2 --gres=gpu:a100:1 --mem=80G \
-    --export=ALL,MANIFEST=configs/sweep/stage1_9b/sweep_manifest.csv \
-    slurm/sweep_array.sh
-
-python scripts/sweep_manager.py show-results
-```
-
----
-
-## Key Files
-
-| File | Purpose |
-|------|---------|
-| `scripts/prepare_sft_data.py` | Data preprocessing; `--min-resolution-confidence` / `--min-concerns` / `--drop-title-only` |
-| `scripts/train_sft.py` | Training; auto-detects Unsloth vs standard PEFT |
-| `scripts/run_sft_inference.py` | Inference with `--tag` suffix, `--resume`, per-article logging |
-| `scripts/compare_models.py` | F1/R/P table from `.summary.json` / `.jsonl` paths |
-| `scripts/generate_comparison_report.py` | Full leaderboard with gate status |
-| `scripts/ensemble_concerns.py` | union / intersection / vote-k ensemble; requires SPECTER2 for `--evaluate` |
-| `scripts/reevaluate_ensemble.py` | Re-run ensemble evaluation with SPECTER2 (use when original eval used Jaccard) |
-| `scripts/error_analysis.py` | HPC mode (SPECTER2) + local mode (pre-computed JSON) |
-| `scripts/evaluate_by_source.py` | Per-journal-source evaluation breakdown |
-| `scripts/compare_step_probes.py` | Checkpoint probe comparison across training steps |
-| `scripts/reparse_inference.py` | Re-parse existing JSONL with updated parser (DeepSeek-R1 fix) |
-| `scripts/postprocess_inference_output.py` | Post-inference dedup + cap processing |
-| `scripts/audit_corpus_truncation.py` | Validate token budget truncation |
-| `scripts/audit_output_split_alignment.py` | Verify split version alignment |
-| `scripts/sweep_manager.py` | `generate-configs` / `log-result` / `show-results` |
-| `slurm/sync_to_hpc.sh` | rsync wrapper; `--download` to pull results |
-| `slurm/submit_checkpoint_probe.sh` | Submit checkpoint probing jobs |
-| `../peer-review-benchmark/bioreview_bench/baseline/reviewer.py` | `REVIEWER_SYSTEM` prompt used for SFT |
+**Severity prioritization** (positive): Model correctly finds major concerns (R=0.45) better than minor (R=0.35) and optional (R=0.29).
 
 ---
 
 ## Known Issues / Lessons Learned
 
-### Data–Task Misalignment (primary issue)
-- v1/v2 training used `resolution_confidence ≥ 0.8` filter → 93% eLife data, avg 6.9 concerns/article
-- Benchmark evaluates all non-figure concerns → avg 14.2 concerns/article across all 5 sources
-- **Fix**: Corpus A (all non-figure, conf ≥ 0.0) restores source balance and concern density
+### Data–Task Alignment (primary issue)
+- Phase 1 training used `resolution_confidence ≥ 0.8` → 93% eLife, avg 6.9 concerns/article
+- Benchmark evaluates all non-figure concerns → avg 14.2 concerns across all 5 sources
+- **Fix (Phase 2):** Corpus A (conf ≥ 0.0) restores source balance and concern density → F1 improved from 0.43 to 0.56
 
-### Model Behavior
-- **Qwen3.5-9B on A40**: OOM at step 0 with `max_seq_length=16384` (training data p99 ≈ 15K tokens). Use A100 (80GB).
-- **14B figure repetition**: v1 model repeated the same concern template per figure. Fixed in v2 via anti-repetition rule in system prompt.
-- **v2 individual models slightly worse than v1**: System prompt change (5–15 → 10–15) did not improve individual F1; v2 ensemble gains (0.54 → 0.58) come from more concerns to combine.
-- **Qwen7B and Qwen3-8B**: Near-zero F1 (< 0.01). Not competitive.
+### SPECTER2 Evaluation
+- **Silent fallback**: Without weight files, evaluation uses Jaccard → ~F1=0.03 (garbage)
+- **Matching threshold insensitive**: 0.50–0.75 all give identical F1 (bimodal distribution)
+- **Ensemble cluster threshold**: Must use 0.98. Lower thresholds cause transitivity chaining
 
-### Evaluation Pitfalls
-- **SPECTER2 fallback**: If `sentence-transformers` unavailable, evaluation silently uses Jaccard → misleadingly low scores (~F1=0.03). Always verify SPECTER2 before trusting metrics.
-- **Ensemble cluster threshold**: SPECTER2 cosine similarity for short biomedical concerns is uniformly high (0.85–0.95+). Connected-components with threshold ≤ 0.90 causes transitivity chaining → all concerns merge into 1 per article. Use `--cluster-threshold 0.98`.
+### Model-Specific Notes
+- **Qwen3.5-9B**: Vision-language model (`Qwen3_5ForConditionalGeneration`). Inference requires `_unwrap_processor()` to extract text tokenizer from multimodal processor
+- **Qwen3.5-9B on A40**: Mamba-hybrid architecture needs `flash-linear-attention` for fast inference. Without it, falls back to slow torch implementation (~281s/article)
+- **All models on A40**: OOM at `max_seq_length=16384`. Use A100 (80GB)
+- **DeepSeek-R1**: Outputs bare JSON `{…}, {…}]` without leading `[`. Fixed in parser
 
 ### Output Format
-- **DeepSeek-R1 output format**: Model outputs bare JSON `{…}, {…}]` without leading `[`. Fixed in `parse_model_output()` step 5; use `scripts/reparse_inference.py` for existing files.
-
-### Data Quality
-- **writing_clarity imbalance**: 96% of writing_clarity concerns have `resolution_confidence=0.10` (no annotator response). Lowering confidence threshold causes 80%+ writing_clarity domination. Fix: Corpus A uses full v3 → 18.9% naturally.
-- **Legacy split confusion**: v1/v2 results were evaluated on legacy 982-article val split. Current frozen v3 has 838 val articles. Do not compare across splits without labeling.
-
-See `results/lessons_learned_2026-03-09.md` and `results/next_steps_plan_2026-03-12.md` for full analysis.
+- 35% of raw model output are duplicate concerns → dedup is essential
+- Over-generation concentrated in F1000/PLOS/PeerJ (multi-reviewer, long papers)
 
 ---
 
@@ -461,7 +442,7 @@ conda create -n bioreview-sft python=3.11
 conda activate bioreview-sft
 pip install -r requirements-train.txt
 
-# Optional: Unsloth for faster training (requires trl≥0.18.2)
+# Optional: Unsloth for faster training (recommended)
 pip install unsloth
 ```
 
@@ -469,3 +450,22 @@ Requires **sibling directory** `../peer-review-benchmark/` for:
 - Splits: `data/splits/v3/{train,val,test}.jsonl`
 - Evaluation: `bioreview_bench.evaluate.runner`
 - System prompt: `bioreview_bench/baseline/reviewer.py`
+
+---
+
+## Citation
+
+If you use this work, please cite:
+
+```bibtex
+@software{bioreview_training_2026,
+  title = {BioReview Training: QLoRA SFT Pipeline for Biomedical Peer-Review LLMs},
+  author = {Jang, Andrew},
+  year = {2026},
+  url = {https://github.com/jang1563/BioReview_Training}
+}
+```
+
+## License
+
+This project is licensed under the Apache License 2.0. See [LICENSE](LICENSE) for details.

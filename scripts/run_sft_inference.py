@@ -249,19 +249,41 @@ def load_model_hf(model_dir: Path, load_in_4bit: bool):
     return model, tokenizer
 
 
+def _unwrap_processor(tokenizer_or_processor):
+    """If tokenizer is actually a multimodal processor, extract the text tokenizer.
+
+    Vision-language models (e.g. Qwen3.5-9B) return a processor from
+    from_pretrained() that wraps the text tokenizer. Calling processor(text)
+    triggers image parsing which fails for text-only inference. We keep the
+    processor for apply_chat_template (handles string content correctly) but
+    use the underlying text tokenizer for encoding.
+    """
+    # Check if it's a processor wrapping a tokenizer
+    inner = getattr(tokenizer_or_processor, "tokenizer", None)
+    if inner is not None and hasattr(inner, "encode") and inner is not tokenizer_or_processor:
+        return tokenizer_or_processor, inner  # (processor, text_tokenizer)
+    return tokenizer_or_processor, tokenizer_or_processor  # same object for both
+
+
 def load_model(model_dir: Path, max_seq_length: int, load_in_4bit: bool):
     """Load model, preferring Unsloth if available.
 
-    Returns (model, tokenizer, engine_name).
+    Returns (model, tokenizer, text_tokenizer, engine_name).
+    tokenizer: full processor/tokenizer (for apply_chat_template)
+    text_tokenizer: text-only tokenizer (for encoding prompts)
     """
     try:
         model, tokenizer = load_model_unsloth(model_dir, max_seq_length, load_in_4bit)
-        return model, tokenizer, "unsloth"
+        processor, text_tok = _unwrap_processor(tokenizer)
+        if text_tok is not processor:
+            print(f"  VL model detected: using inner text tokenizer for encoding")
+        return model, processor, text_tok, "unsloth"
     except ImportError:
         pass
 
     model, tokenizer = load_model_hf(model_dir, load_in_4bit)
-    return model, tokenizer, "hf"
+    processor, text_tok = _unwrap_processor(tokenizer)
+    return model, processor, text_tok, "hf"
 
 
 # ---------------------------------------------------------------------------
@@ -356,11 +378,18 @@ def generate_one(
     temperature: float,
     repetition_penalty: float,
     max_seq_length: int = 16384,
+    text_tokenizer=None,
 ) -> str:
-    """Generate response for a single prompt."""
+    """Generate response for a single prompt.
+
+    Args:
+        text_tokenizer: text-only tokenizer for encoding (needed for VL models
+            where `tokenizer` is a processor that triggers image parsing).
+    """
     import torch
 
-    inputs = tokenizer(
+    enc = text_tokenizer if text_tokenizer is not None else tokenizer
+    inputs = enc(
         prompt, return_tensors="pt", truncation=True, max_length=max_seq_length
     )
     input_ids = inputs["input_ids"].to(model.device)
@@ -371,9 +400,9 @@ def generate_one(
         "attention_mask": attention_mask,
         "max_new_tokens": max_new_tokens,
         "pad_token_id": (
-            tokenizer.pad_token_id
-            if tokenizer.pad_token_id is not None
-            else tokenizer.eos_token_id
+            enc.pad_token_id
+            if enc.pad_token_id is not None
+            else enc.eos_token_id
         ),
         "repetition_penalty": repetition_penalty,
     }
@@ -390,7 +419,7 @@ def generate_one(
 
     # Decode only generated tokens
     generated_ids = outputs[0][input_ids.shape[-1] :]
-    return tokenizer.decode(generated_ids, skip_special_tokens=True)
+    return enc.decode(generated_ids, skip_special_tokens=True)
 
 
 # ---------------------------------------------------------------------------
@@ -675,12 +704,12 @@ def main() -> None:
     # ── Load model ──────────────────────────────────────────────
     print("Loading model...")
     t0 = time.time()
-    model, tokenizer, engine = load_model(model_dir, args.max_seq_length, load_in_4bit)
+    model, tokenizer, text_tokenizer, engine = load_model(model_dir, args.max_seq_length, load_in_4bit)
     print(f"Model loaded in {time.time() - t0:.1f}s (engine={engine})")
 
     # Ensure pad token
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
+    if text_tokenizer.pad_token is None:
+        text_tokenizer.pad_token = text_tokenizer.eos_token
 
     # ── Read enable_thinking from training config ──────────────
     enable_thinking = True
@@ -793,6 +822,7 @@ def main() -> None:
                     temperature=args.temperature,
                     repetition_penalty=args.repetition_penalty,
                     max_seq_length=args.max_seq_length,
+                    text_tokenizer=text_tokenizer,
                 )
 
                 structured, texts = parse_model_output(raw_output)

@@ -17,7 +17,6 @@
 
 set -euo pipefail
 
-CONDA_ENV="${CONDA_ENV:-bioreview-sft}"
 SCRATCH_DIR="${SCRATCH_DIR:-/path/to/scratch}"
 PROJECT_DIR="${SCRATCH_DIR}/BioReview_Training"
 BENCH_DIR="${SCRATCH_DIR}/peer-review-benchmark"
@@ -27,14 +26,9 @@ TAG="${TAG:-}"
 TOOL_OUTPUT="${TOOL_OUTPUT:-}"
 OUTPUT_PREFIX="${OUTPUT_PREFIX:-}"
 
-CONDA_BASE="${CONDA_BASE:-${CONDA_PREFIX:-/path/to/conda}}"
-source "${CONDA_BASE}/etc/profile.d/conda.sh" \
-    || { echo "ERROR: conda not found at ${CONDA_BASE}"; exit 1; }
-conda activate "${CONDA_ENV}" \
-    || { echo "ERROR: conda env '${CONDA_ENV}' not found."; exit 1; }
-
 cd "${PROJECT_DIR}" \
     || { echo "ERROR: project dir not found: ${PROJECT_DIR}"; exit 1; }
+source slurm/env_setup.sh
 
 mkdir -p logs results/source_eval
 
