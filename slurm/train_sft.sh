@@ -35,12 +35,12 @@
 #SBATCH --mem=48G
 #SBATCH --gres=gpu:a40:1
 #SBATCH --time=40:00:00
-#SBATCH --output=/athena/masonlab/scratch/users/jak4013/BioReview_Training/logs/train_%j.log
-#SBATCH --error=/athena/masonlab/scratch/users/jak4013/BioReview_Training/logs/train_%j.err
+#SBATCH --output=${SCRATCH_DIR:-/path/to/scratch}/BioReview_Training/logs/train_%j.log
+#SBATCH --error=${SCRATCH_DIR:-/path/to/scratch}/BioReview_Training/logs/train_%j.err
 
 # ── Configuration (overridable via sbatch --export) ────────────────────────
 CONDA_ENV="${CONDA_ENV:-bioreview-sft}"
-SCRATCH_DIR="/athena/masonlab/scratch/users/jak4013"
+SCRATCH_DIR="${SCRATCH_DIR:-/path/to/scratch}"
 PROJECT_DIR="${SCRATCH_DIR}/BioReview_Training"
 CONFIG="${CONFIG:-configs/qwen3_8b_all_nonfig.yaml}"
 MAX_STEPS="${MAX_STEPS:--1}"
@@ -67,7 +67,7 @@ echo "============================================================"
 
 # ── Environment setup ──────────────────────────────────────────────────────
 # Source conda directly (bashrc may skip non-interactive shells)
-CONDA_BASE="${CONDA_BASE:-/home/fs01/jak4013/miniconda3/miniconda3}"
+CONDA_BASE="${CONDA_BASE:-${CONDA_PREFIX:-/path/to/conda}}"
 source "${CONDA_BASE}/etc/profile.d/conda.sh" \
     || { echo "ERROR: conda not found at ${CONDA_BASE}"; exit 1; }
 conda activate "${CONDA_ENV}" \

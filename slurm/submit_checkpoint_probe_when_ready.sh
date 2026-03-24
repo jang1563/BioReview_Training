@@ -4,17 +4,17 @@
 # Run from LOCAL machine:
 #   bash slurm/submit_checkpoint_probe_when_ready.sh \
 #     --checkpoint-step 300 \
-#     --splits-dir /athena/masonlab/scratch/users/jak4013/peer-review-benchmark/data/splits/probe50 \
+#     --splits-dir ${SCRATCH_DIR:-/path/to/scratch}/peer-review-benchmark/data/splits/probe50 \
 #     --max-articles 50 \
 #     --tag probe50_current_v3_checkpoint300
 
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-CAYUGA_USER="jak4013"
-CAYUGA_HOST="${CAYUGA_HOST:-cayuga-login1}"
+CAYUGA_USER="${USER}"
+CAYUGA_HOST="${HPC_LOGIN:-cayuga-login1}"
 REMOTE_BASE="/athena/masonlab/scratch/users/${CAYUGA_USER}/BioReview_Training"
-CONDA_BASE="/home/fs01/jak4013/miniconda3/miniconda3"
+CONDA_BASE="${CONDA_PREFIX:-/path/to/conda}"
 CONDA_ENV="bioreview-sft"
 
 CONFIG="configs/qwen3_8b_all_nonfig.yaml"

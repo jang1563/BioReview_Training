@@ -18,8 +18,8 @@
 set -euo pipefail
 
 # ── Configuration ──────────────────────────────────────────────────────────
-CAYUGA_USER="jak4013"
-CAYUGA_HOST="${CAYUGA_HOST:-cayuga-login1}"
+CAYUGA_USER="${USER}"
+CAYUGA_HOST="${HPC_LOGIN:-cayuga-login1}"
 REMOTE_BASE="/athena/masonlab/scratch/users/${CAYUGA_USER}/BioReview_Training"
 LOCAL_BASE="$(cd "$(dirname "$0")/.." && pwd)"
 

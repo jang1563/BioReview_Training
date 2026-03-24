@@ -10,11 +10,11 @@
 #SBATCH --mem=48G
 #SBATCH --gres=gpu:a40:1
 #SBATCH --time=03:00:00
-#SBATCH --output=/athena/cayuga_0003/scratch/users/jak4013/BioReview_Training/logs/reparse_%j.log
-#SBATCH --error=/athena/cayuga_0003/scratch/users/jak4013/BioReview_Training/logs/reparse_%j.err
+#SBATCH --output=${SCRATCH_DIR:-/path/to/scratch}/BioReview_Training/logs/reparse_%j.log
+#SBATCH --error=${SCRATCH_DIR:-/path/to/scratch}/BioReview_Training/logs/reparse_%j.err
 
-SCRATCH_DIR="/athena/masonlab/scratch/users/jak4013"
-PROJECT_DIR="/athena/cayuga_0003/scratch/users/jak4013/BioReview_Training"
+SCRATCH_DIR="${SCRATCH_DIR:-/path/to/scratch}"
+PROJECT_DIR="${SCRATCH_DIR:-/path/to/scratch}/BioReview_Training"
 MODEL_DIR="models/qwen3_8b_all_nonfig_v1"
 # Use a dedicated splits dir containing only the 10 failed articles
 SPLITS_DIR="${PROJECT_DIR}/data/splits_reparse"
@@ -35,7 +35,7 @@ echo "Start time:   $(date)"
 echo "============================================================"
 
 # ── Conda ──────────────────────────────────────────────────────────────────
-source /home/fs01/jak4013/miniconda3/miniconda3/etc/profile.d/conda.sh
+source ${CONDA_PREFIX:-/path/to/conda}/etc/profile.d/conda.sh
 conda activate bioreview-sft
 
 cd "${PROJECT_DIR}" || { echo "ERROR: project dir not found"; exit 1; }

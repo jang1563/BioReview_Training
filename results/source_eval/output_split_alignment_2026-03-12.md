@@ -4,7 +4,7 @@
 
 ## gpt4omini_val.jsonl
 
-- Best candidate split: `/Users/jak4013/Dropbox/Bioinformatics/Claude/peer-review-benchmark/data/splits/v2/val.jsonl`
+- Best candidate split: `./data/splits/v2/val.jsonl`
 - Exact match: `no`
 
 | Split | Output rows | Split rows | Intersection | Output cov. | Split cov. | Output-only | Split-only | Jaccard | Exact |
@@ -15,7 +15,7 @@
 
 ## qwen3.5_9b_bioreview_v1_val.jsonl
 
-- Best candidate split: `/Users/jak4013/Dropbox/Bioinformatics/Claude/peer-review-benchmark/data/splits/v2/val.jsonl`
+- Best candidate split: `./data/splits/v2/val.jsonl`
 - Exact match: `no`
 
 | Split | Output rows | Split rows | Intersection | Output cov. | Split cov. | Output-only | Split-only | Jaccard | Exact |
@@ -26,7 +26,7 @@
 
 ## qwen3_8b_bioreview_v1_val.jsonl
 
-- Best candidate split: `/Users/jak4013/Dropbox/Bioinformatics/Claude/peer-review-benchmark/data/splits/v2/val.jsonl`
+- Best candidate split: `./data/splits/v2/val.jsonl`
 - Exact match: `no`
 
 | Split | Output rows | Split rows | Intersection | Output cov. | Split cov. | Output-only | Split-only | Jaccard | Exact |

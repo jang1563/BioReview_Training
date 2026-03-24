@@ -1,7 +1,7 @@
 # BioReview Eval Comparison
 
 - Generated: 2026-03-12 20:26:10Z
-- Baseline summary: `/Users/jak4013/Dropbox/Bioinformatics/Claude/BioReview_Training/results/baseline_eval/baseline_summary_val_20260304T022023Z.json`
+- Baseline summary: `./results/baseline_eval/baseline_summary_val_20260304T022023Z.json`
 - SFT source: `results/sft_eval/qwen3_8b_bioreview_v1_val.summary.json`
 - Reference baseline: `gpt-4o-mini (baseline)`
 - Gate: `f1_micro >= 0.58` and `recall_overall >= 0.45`

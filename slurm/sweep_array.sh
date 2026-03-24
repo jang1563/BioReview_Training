@@ -35,8 +35,8 @@
 #SBATCH --mem=48G
 #SBATCH --gres=gpu:a40:1
 #SBATCH --time=10:00:00
-#SBATCH --output=/athena/masonlab/scratch/users/jak4013/BioReview_Training/logs/sweep_%A_%a.log
-#SBATCH --error=/athena/masonlab/scratch/users/jak4013/BioReview_Training/logs/sweep_%A_%a.err
+#SBATCH --output=${SCRATCH_DIR:-/path/to/scratch}/BioReview_Training/logs/sweep_%A_%a.log
+#SBATCH --error=${SCRATCH_DIR:-/path/to/scratch}/BioReview_Training/logs/sweep_%A_%a.err
 
 # IMPORTANT: Override --array via sbatch CLI to match manifest size.
 # This default (1-4%2) is for stage1_14b only. Use --array=1-N%2 for N experiments.
@@ -44,7 +44,7 @@
 
 # ── Configuration ────────────────────────────────────────────────────────────
 CONDA_ENV="${CONDA_ENV:-bioreview-sft}"
-SCRATCH_DIR="/athena/masonlab/scratch/users/jak4013"
+SCRATCH_DIR="${SCRATCH_DIR:-/path/to/scratch}"
 PROJECT_DIR="${SCRATCH_DIR}/BioReview_Training"
 MANIFEST="${MANIFEST:-configs/sweep/stage1_14b/sweep_manifest.csv}"
 SPLIT="${SPLIT:-val}"
@@ -65,7 +65,7 @@ echo "Start time:   $(date)"
 echo "============================================================"
 
 # ── Environment setup ────────────────────────────────────────────────────────
-CONDA_BASE="/home/fs01/jak4013/miniconda3/miniconda3"
+CONDA_BASE="${CONDA_PREFIX:-/path/to/conda}"
 source "${CONDA_BASE}/etc/profile.d/conda.sh" \
     || { echo "ERROR: conda not found"; exit 1; }
 conda activate "${CONDA_ENV}" \

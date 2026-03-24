@@ -9,7 +9,7 @@ prepare_sft_data configuration
 - drop_title_only: True
 - hf_tokenizer: (none)
 - token_counter: heuristic:chars/3(conservative)
-- reviewer_py: /Users/jak4013/Dropbox/Bioinformatics/Claude/peer-review-benchmark/bioreview_bench/baseline/reviewer.py
+- reviewer_py: ./bioreview_bench/baseline/reviewer.py
 
 [train]
 articles total=4740 kept=700 dropped(title_only)=2 dropped(<min_concerns)=4038 bad_json=0

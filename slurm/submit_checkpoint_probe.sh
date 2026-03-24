@@ -8,11 +8,11 @@
 
 set -euo pipefail
 
-CAYUGA_USER="jak4013"
-CAYUGA_HOST="${CAYUGA_HOST:-cayuga-login1}"
+CAYUGA_USER="${USER}"
+CAYUGA_HOST="${HPC_LOGIN:-cayuga-login1}"
 REMOTE_BASE="/athena/masonlab/scratch/users/${CAYUGA_USER}/BioReview_Training"
 SLURM_BIN="/opt/ohpc/pub/software/slurm/24.05.2/bin"
-CONDA_BASE="/home/fs01/jak4013/miniconda3/miniconda3"
+CONDA_BASE="${CONDA_PREFIX:-/path/to/conda}"
 CONDA_ENV="bioreview-sft"
 
 CONFIG="configs/qwen3_8b_all_nonfig.yaml"

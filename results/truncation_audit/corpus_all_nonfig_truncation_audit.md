@@ -1,7 +1,7 @@
 # Corpus Truncation Audit: corpus_all_nonfig
 
 - Generated: 2026-03-12 20:58:56Z
-- Corpus dir: `/Users/jak4013/Dropbox/Bioinformatics/Claude/BioReview_Training/data/corpus_all_nonfig`
+- Corpus dir: `./data/corpus_all_nonfig`
 - Token counter: `heuristic:chars/3(conservative)`
 
 ## Split Summary

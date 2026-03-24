@@ -12,13 +12,13 @@
 #SBATCH --mem=32G
 #SBATCH --gres=gpu:a40:1
 #SBATCH --time=04:00:00
-#SBATCH --output=/athena/masonlab/scratch/users/jak4013/BioReview_Training/logs/source_eval_%j.log
-#SBATCH --error=/athena/masonlab/scratch/users/jak4013/BioReview_Training/logs/source_eval_%j.err
+#SBATCH --output=${SCRATCH_DIR:-/path/to/scratch}/BioReview_Training/logs/source_eval_%j.log
+#SBATCH --error=${SCRATCH_DIR:-/path/to/scratch}/BioReview_Training/logs/source_eval_%j.err
 
 set -euo pipefail
 
 CONDA_ENV="${CONDA_ENV:-bioreview-sft}"
-SCRATCH_DIR="/athena/masonlab/scratch/users/jak4013"
+SCRATCH_DIR="${SCRATCH_DIR:-/path/to/scratch}"
 PROJECT_DIR="${SCRATCH_DIR}/BioReview_Training"
 BENCH_DIR="${SCRATCH_DIR}/peer-review-benchmark"
 MODEL_DIR="${MODEL_DIR:-models/qwen3_8b_all_nonfig_v1}"
@@ -27,7 +27,7 @@ TAG="${TAG:-}"
 TOOL_OUTPUT="${TOOL_OUTPUT:-}"
 OUTPUT_PREFIX="${OUTPUT_PREFIX:-}"
 
-CONDA_BASE="${CONDA_BASE:-/home/fs01/jak4013/miniconda3/miniconda3}"
+CONDA_BASE="${CONDA_BASE:-${CONDA_PREFIX:-/path/to/conda}}"
 source "${CONDA_BASE}/etc/profile.d/conda.sh" \
     || { echo "ERROR: conda not found at ${CONDA_BASE}"; exit 1; }
 conda activate "${CONDA_ENV}" \

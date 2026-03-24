@@ -12,7 +12,7 @@
         "split_coverage": 0.20652173913043478,
         "jaccard": 0.01800947867298578,
         "exact_match": false,
-        "split_path": "/Users/jak4013/Dropbox/Bioinformatics/Claude/peer-review-benchmark/data/splits/val.jsonl"
+        "split_path": "./data/splits/val.jsonl"
       },
       {
         "rows_output": 982,
@@ -24,7 +24,7 @@
         "split_coverage": 0.9613034623217923,
         "jaccard": 0.9254901960784314,
         "exact_match": false,
-        "split_path": "/Users/jak4013/Dropbox/Bioinformatics/Claude/peer-review-benchmark/data/splits/v2/val.jsonl"
+        "split_path": "./data/splits/v2/val.jsonl"
       },
       {
         "rows_output": 982,
@@ -36,7 +36,7 @@
         "split_coverage": 0.17899761336515513,
         "jaccard": 0.08982035928143713,
         "exact_match": false,
-        "split_path": "/Users/jak4013/Dropbox/Bioinformatics/Claude/peer-review-benchmark/data/splits/v3/val.jsonl"
+        "split_path": "./data/splits/v3/val.jsonl"
       }
     ],
     "qwen3.5_9b_bioreview_v1_val.jsonl": [
@@ -50,7 +50,7 @@
         "split_coverage": 0.20652173913043478,
         "jaccard": 0.01800947867298578,
         "exact_match": false,
-        "split_path": "/Users/jak4013/Dropbox/Bioinformatics/Claude/peer-review-benchmark/data/splits/val.jsonl"
+        "split_path": "./data/splits/val.jsonl"
       },
       {
         "rows_output": 982,
@@ -62,7 +62,7 @@
         "split_coverage": 0.9613034623217923,
         "jaccard": 0.9254901960784314,
         "exact_match": false,
-        "split_path": "/Users/jak4013/Dropbox/Bioinformatics/Claude/peer-review-benchmark/data/splits/v2/val.jsonl"
+        "split_path": "./data/splits/v2/val.jsonl"
       },
       {
         "rows_output": 982,
@@ -74,7 +74,7 @@
         "split_coverage": 0.17899761336515513,
         "jaccard": 0.08982035928143713,
         "exact_match": false,
-        "split_path": "/Users/jak4013/Dropbox/Bioinformatics/Claude/peer-review-benchmark/data/splits/v3/val.jsonl"
+        "split_path": "./data/splits/v3/val.jsonl"
       }
     ],
     "qwen3_8b_bioreview_v1_val.jsonl": [
@@ -88,7 +88,7 @@
         "split_coverage": 0.0,
         "jaccard": 0.0,
         "exact_match": false,
-        "split_path": "/Users/jak4013/Dropbox/Bioinformatics/Claude/peer-review-benchmark/data/splits/val.jsonl"
+        "split_path": "./data/splits/val.jsonl"
       },
       {
         "rows_output": 5,
@@ -100,7 +100,7 @@
         "split_coverage": 0.0050916496945010185,
         "jaccard": 0.0050916496945010185,
         "exact_match": false,
-        "split_path": "/Users/jak4013/Dropbox/Bioinformatics/Claude/peer-review-benchmark/data/splits/v2/val.jsonl"
+        "split_path": "./data/splits/v2/val.jsonl"
       },
       {
         "rows_output": 5,
@@ -112,7 +112,7 @@
         "split_coverage": 0.0011933174224343676,
         "jaccard": 0.0011876484560570072,
         "exact_match": false,
-        "split_path": "/Users/jak4013/Dropbox/Bioinformatics/Claude/peer-review-benchmark/data/splits/v3/val.jsonl"
+        "split_path": "./data/splits/v3/val.jsonl"
       }
     ]
   }

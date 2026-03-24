@@ -1,6 +1,6 @@
 {
   "generated_at_utc": "20260312T205841Z",
-  "corpus_dir": "/Users/jak4013/Dropbox/Bioinformatics/Claude/BioReview_Training/data/corpus_hi_conf",
+  "corpus_dir": "./data/corpus_hi_conf",
   "token_counter": "heuristic:chars/3(conservative)",
   "token_budget": 15000,
   "splits": {

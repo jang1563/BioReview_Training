@@ -18,7 +18,7 @@ set -euo pipefail
 
 CONDA_ENV="bioreview-sft"
 PYTHON_VERSION="3.11"
-SCRATCH_DIR="/athena/masonlab/scratch/users/jak4013"
+SCRATCH_DIR="${SCRATCH_DIR:-/path/to/scratch}"
 PROJECT_DIR="${SCRATCH_DIR}/BioReview_Training"
 CONDA_BASE="${CONDA_BASE:-$(conda info --base 2>/dev/null || true)}"
 

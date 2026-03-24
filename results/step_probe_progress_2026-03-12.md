@@ -12,7 +12,7 @@
 ### Checkpoint-100 probe50
 
 Source:
-- [checkpoint-100 probe50 summary](/Users/jak4013/Dropbox/Bioinformatics/Claude/BioReview_Training/results/sft_eval/checkpoint-100_val_probe50_current_v3_checkpoint100.summary.json#L1)
+- [checkpoint-100 probe50 summary](./results/sft_eval/checkpoint-100_val_probe50_current_v3_checkpoint100.summary.json#L1)
 
 Metrics:
 - `F1=0.0132`
@@ -26,11 +26,11 @@ Interpretation:
 - This is not only a duplicate problem. Exact dedup and `cap=15` improve precision but do not improve recall.
 
 Postprocess ablations:
-- [dedup summary](/Users/jak4013/Dropbox/Bioinformatics/Claude/BioReview_Training/results/sft_eval/checkpoint-100_val_probe50_current_v3_checkpoint100.dedup.summary.json#L1)
+- [dedup summary](./results/sft_eval/checkpoint-100_val_probe50_current_v3_checkpoint100.dedup.summary.json#L1)
   - `F1=0.0250`
   - `Recall=0.0194`
   - `Precision=0.0351`
-- [dedup+cap15 summary](/Users/jak4013/Dropbox/Bioinformatics/Claude/BioReview_Training/results/sft_eval/checkpoint-100_val_probe50_current_v3_checkpoint100.dedup_cap15.summary.json#L1)
+- [dedup+cap15 summary](./results/sft_eval/checkpoint-100_val_probe50_current_v3_checkpoint100.dedup_cap15.summary.json#L1)
   - `F1=0.0274`
   - `Recall=0.0194`
   - `Precision=0.0466`
@@ -38,7 +38,7 @@ Postprocess ablations:
 ### Checkpoint-200 early signal
 
 Source:
-- [checkpoint-200 probe50 summary](/Users/jak4013/Dropbox/Bioinformatics/Claude/BioReview_Training/results/sft_eval/checkpoint-200_val_probe50_current_v3_checkpoint200.summary.json#L1)
+- [checkpoint-200 probe50 summary](./results/sft_eval/checkpoint-200_val_probe50_current_v3_checkpoint200.summary.json#L1)
 
 Full summary is now available.
 
@@ -82,7 +82,7 @@ Early-pattern note:
 ### Checkpoint-300 result
 
 Source:
-- [checkpoint-300 probe50 summary](/Users/jak4013/Dropbox/Bioinformatics/Claude/BioReview_Training/results/sft_eval/checkpoint-300_val_probe50_current_v3_checkpoint300.summary.json#L1)
+- [checkpoint-300 probe50 summary](./results/sft_eval/checkpoint-300_val_probe50_current_v3_checkpoint300.summary.json#L1)
 
 Metrics:
 - `F1=0.0221`

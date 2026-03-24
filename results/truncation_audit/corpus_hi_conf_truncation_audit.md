@@ -1,7 +1,7 @@
 # Corpus Truncation Audit: corpus_hi_conf
 
 - Generated: 2026-03-12 20:58:50Z
-- Corpus dir: `/Users/jak4013/Dropbox/Bioinformatics/Claude/BioReview_Training/data/corpus_hi_conf`
+- Corpus dir: `./data/corpus_hi_conf`
 - Token counter: `heuristic:chars/3(conservative)`
 
 ## Split Summary
