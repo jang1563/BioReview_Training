@@ -31,6 +31,7 @@ MODEL_DIR="${MODEL_DIR:-models/qwen3_8b_all_nonfig_v1}"
 SPLIT="test"
 CAP="${CAP:-20}"
 DEDUP="${DEDUP:-true}"
+RESUME="${RESUME:-false}"
 
 # ── Setup ────────────────────────────────────────────────────────────────
 cd "${PROJECT_DIR}" \
@@ -53,6 +54,7 @@ echo "Node:          ${SLURMD_NODENAME}"
 echo "Model:         ${MODEL_DIR}"
 echo "Split:         ${SPLIT}"
 echo "Dedup:         ${DEDUP}"
+echo "Resume:        ${RESUME}"
 echo "Cap:           ${CAP}"
 echo "Raw output:    ${RAW_OUTPUT}"
 echo "PP output:     ${PP_OUTPUT}"
@@ -89,11 +91,11 @@ echo "============================================================"
 echo "Step 1/3: Running inference on test set (${N_TEST} articles)"
 echo "============================================================"
 
-python scripts/run_sft_inference.py \
-    --model-dir "${MODEL_DIR}" \
-    --split "${SPLIT}" \
-    --splits-dir "${SPLITS_DIR}" \
-    --evaluate
+INFER_ARGS="--model-dir ${MODEL_DIR} --split ${SPLIT} --splits-dir ${SPLITS_DIR} --evaluate"
+if [ "${RESUME}" = "true" ] || [ "${RESUME}" = "1" ]; then
+    INFER_ARGS="${INFER_ARGS} --resume"
+fi
+python scripts/run_sft_inference.py ${INFER_ARGS}
 
 echo ""
 echo "Raw inference complete: ${RAW_OUTPUT}"
