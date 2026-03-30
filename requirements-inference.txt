@@ -1,0 +1,24 @@
+# BioReview SFT — Inference Dependencies
+#
+# Minimal requirements to run the model card "How to Use" code.
+#
+# Install:
+#   pip install -r requirements-inference.txt
+#
+# GPU (recommended): CUDA 11.8+ with a GPU that has ≥24 GB VRAM for 4-bit loading.
+# CPU: set device_map="cpu" and remove load_in_4bit=True (slow, high RAM).
+
+# Core inference
+torch>=2.1.0
+transformers>=4.45.0
+peft>=0.13.0
+accelerate>=0.34.0
+bitsandbytes>=0.43.0     # 4-bit NF4 quantization
+
+# Tokenizer / chat template support
+sentencepiece>=0.2.0
+protobuf>=4.25.0
+
+# Postprocessing (dedup+cap20)
+sentence-transformers>=2.2.0   # SPECTER2 embeddings for dedup
+scikit-learn>=1.3.0            # cosine_similarity
