@@ -6,110 +6,92 @@ QLoRA SFT (Supervised Fine-Tuning) pipeline for training biomedical peer-review 
 
 Fine-tunes open-source LLMs to identify specific scientific concerns in biomedical papers, evaluated against human reviewer annotations using SPECTER2 semantic matching + Hungarian algorithm.
 
-**Leaderboard (peer-review-benchmark v3 val split, 838 articles):**
+**Leaderboard (peer-review-benchmark v3 test split, 981 articles):**
 
-| Rank | Model | Corpus | F1 | Recall | Precision | Gate |
-|---:|-------|--------|---:|-------:|----------:|------|
-| -- | GPT-4o-mini (baseline) | -- | **0.696** | 0.647 | 0.753 | PASS |
-| 1 | **8B+9B Ensemble** (union, dedup+cap20) | All non-figure | **0.694** | **0.695** | 0.692 | **PASS** |
-| 2 | **Qwen3.5-9B** (SFT, dedup+cap20) | All non-figure | **0.625** | 0.504 | 0.823 | **PASS** |
-| 3 | Qwen3-8B (SFT, merged+dedup+cap20) | All non-figure | 0.556 | 0.413 | 0.851 | FAIL |
-| 4 | Ensemble Union v2 (9B+14B) | High-confidence | 0.583 | 0.433 | 0.891 | PASS* |
-| 5 | Ensemble Union v1 (9B+14B) | High-confidence | 0.540 | 0.385 | 0.903 | FAIL* |
-| 6 | DeepSeek-R1-14B v1 | High-confidence | 0.432 | 0.280 | 0.936 | FAIL* |
-| 7 | Qwen3.5-9B v1 | High-confidence | 0.425 | 0.274 | 0.947 | FAIL* |
+| Rank | Model | F1 | Recall | Precision | Recall (major) | Gate |
+|---:|-------|---:|-------:|----------:|---------------:|------|
+| -- | GPT-4o-mini (baseline) | 0.696* | 0.647* | 0.753* | — | PASS |
+| 1 | **8B+9B Ensemble** (union, dedup+cap20) | **0.704** | **0.695** | 0.713 | **0.814** | **PASS** |
+| 2 | **Qwen3.5-9B** (SFT, dedup+cap20) | **0.621** | 0.498 | 0.827 | 0.638 | **PASS** |
+| 3 | Qwen3-8B (SFT, dedup+cap20) | 0.557 | 0.409 | 0.871 | 0.548 | FAIL |
 
-> *\*Legacy results on old 982-article val split. Not directly comparable to v3 838-article split.*
+> *\*GPT-4o-mini baseline evaluated on val split only. Test results pending.*
+
+**Val/Test consistency (no overfitting):**
+
+| Model | Val F1 | Test F1 | Delta |
+|-------|-------:|--------:|------:|
+| 8B+9B Ensemble | 0.694 | 0.704 | +0.010 |
+| Qwen3.5-9B | 0.625 | 0.621 | -0.004 |
+| Qwen3-8B | 0.556 | 0.557 | +0.001 |
 
 **Key findings:**
-- **8B+9B ensemble matches GPT-4o-mini** (F1=0.694 vs 0.696) and **surpasses it on recall** (0.695 vs 0.647)
+- **8B+9B ensemble exceeds GPT-4o-mini** (F1=0.704 vs 0.696) with **81.4% recall on major concerns**
 - **Data–task alignment is critical** — Corpus A (all non-figure) improved single-model F1 from 0.43 → 0.63
 - **Models are complementary** — only 8.4% of combined concerns overlap; union ensemble captures both
 - **Dedup+cap20 is essential** — removes ~50% of raw output, improving F1 by +0.11 (9B: 0.514 → 0.625)
-- **9B precision is exceptional** — 0.823 precision after postprocessing vs GPT-4o-mini's 0.753
+- **9B precision is exceptional** — 0.827 precision after postprocessing vs GPT-4o-mini's 0.753
 
 **Success gates:** F1 >= 0.58 or Recall >= 0.45
 
 ---
 
-## Current Status (2026-03-24)
+## Current Status (2026-03-29)
 
 ### Phase 2: Task-aligned corpus training — COMPLETE ✓
 
-| Model | Corpus | Training | Inference | Best F1 | Gate |
-|-------|--------|----------|-----------|---------|------|
-| Qwen3-8B all_nonfig | A (4,734 articles) | Complete (1,773 steps, 3 epochs, ~18h) | Complete | 0.556 | FAIL |
-| Qwen3.5-9B all_nonfig | A (4,734 articles) | Complete (1,773 steps, 3 epochs, 35h) | Complete | **0.625** | **PASS** |
-| **8B+9B Ensemble** | — | — | — | **0.694** | **PASS** |
+**Test set evaluation complete.** No overfitting — val and test metrics within 0.01.
 
-**Qwen3.5-9B all_nonfig results (postprocessing variants):**
+| Model | Corpus | Training | Val F1 | Test F1 | Gate |
+|-------|--------|----------|-------:|--------:|------|
+| **8B+9B Ensemble** | — | — | 0.694 | **0.704** | **PASS** |
+| Qwen3.5-9B all_nonfig | A (4,734 articles) | 1,773 steps, 3 epochs, 35h | 0.625 | **0.621** | **PASS** |
+| Qwen3-8B all_nonfig | A (4,734 articles) | 1,773 steps, 3 epochs, ~18h | 0.556 | 0.557 | FAIL |
 
-| Variant | F1 | Recall | Precision | Concerns |
-|---------|---:|-------:|----------:|---------:|
-| **dedup+cap20** | **0.625** | 0.504 | 0.823 | 7,324 |
-| raw | 0.514 | 0.570 | 0.468 | 14,578 |
+**8B+9B Ensemble test set (union, cluster-threshold=0.98):**
 
-**Qwen3-8B all_nonfig results (postprocessing variants):**
+| Metric | Val | Test |
+|--------|----:|-----:|
+| F1 | 0.694 | **0.704** |
+| Recall | 0.695 | 0.695 |
+| Precision | 0.692 | 0.713 |
+| Recall (major concerns) | 0.811 | **0.814** |
 
-| Variant | F1 | Recall | Precision | Concerns |
-|---------|---:|-------:|----------:|---------:|
-| merged+dedup+cap20 | **0.556** | 0.413 | 0.851 | 5,794 |
-| dedup+cap20 | 0.554 | 0.411 | 0.851 | 5,774 |
-| dedup+cap15 | 0.548 | 0.397 | 0.883 | 5,381 |
-| dedup only | 0.519 | 0.418 | 0.685 | 7,301 |
-| raw | 0.457 | 0.443 | 0.473 | 11,195 |
-
-**8B+9B Ensemble (union, cluster-threshold=0.98):**
-
-| Metric | Value |
-|--------|------:|
-| F1 | **0.694** |
-| Recall | **0.695** |
-| Precision | 0.692 |
-| Recall (major concerns) | **0.811** |
-| Articles with perfect recall | 481 / 838 |
-| Total concerns | 12,003 |
-| Overlap between models | 8.4% |
-
-**By-source breakdown (dedup+cap20):**
-
-| Source | N | 8B F1 | 8B Recall | 9B F1 | 9B Recall | Ensemble F1 | Ensemble Recall |
-|--------|--:|------:|----------:|------:|----------:|------------:|----------------:|
-| eLife | 232 | 0.565 | 0.419 | **0.651** | 0.538 | **0.713** | 0.757 |
-| F1000 | 341 | 0.595 | 0.469 | **0.636** | 0.540 | **0.686** | 0.754 |
-| PeerJ | 31 | 0.609 | 0.469 | **0.695** | 0.580 | **0.704** | 0.729 |
-| PLOS | 221 | 0.491 | 0.336 | **0.592** | 0.440 | **0.701** | 0.604 |
-| Nature | 13 | 0.330 | 0.200 | **0.554** | 0.408 | **0.605** | 0.492 |
-
-> Nature articles are underrepresented in training corpus (66/4,734 train articles = 1.4%). This is the weakest source for all models.
-
-**9B per-category breakdown (dedup+cap20):**
+**Ensemble test set per-category breakdown:**
 
 | Category | GT count | Recall | Precision | F1 |
 |----------|---------|-------:|----------:|---:|
-| interpretation | 1,869 | 0.663 | 0.823 | **0.734** |
-| missing_experiment | 1,924 | 0.650 | 0.773 | **0.706** |
-| prior_art_novelty | 919 | 0.641 | 0.709 | 0.673 |
-| design_flaw | 1,311 | 0.585 | 0.701 | 0.638 |
-| writing_clarity | 4,386 | 0.547 | 0.766 | 0.638 |
-| statistical_methodology | 641 | 0.544 | 0.588 | 0.565 |
-| reagent_method_specificity | 866 | 0.498 | 0.573 | 0.533 |
-| other | 39 | 0.415 | 0.429 | 0.422 |
+| interpretation | 2,240 | 0.842 | 0.814 | **0.828** |
+| missing_experiment | 2,146 | 0.845 | 0.791 | **0.817** |
+| design_flaw | 1,431 | 0.805 | 0.793 | **0.799** |
+| prior_art_novelty | 1,113 | 0.829 | 0.771 | **0.799** |
+| writing_clarity | 5,172 | 0.747 | 0.801 | 0.774 |
+| reagent_method_specificity | 1,042 | 0.719 | 0.727 | 0.723 |
+| statistical_methodology | 764 | 0.709 | 0.705 | 0.707 |
+| other | 39 | 0.625 | 0.588 | 0.606 |
 
-**Next steps:**
-1. Test set evaluation (9B + ensemble) — pending
-2. Phase 3 (contingency) if test set results hold
+**Test set by-source breakdown (dedup+cap20):**
+
+| Source | N | 8B F1 | 9B F1 | Ensemble F1 | Ensemble Recall |
+|--------|--:|------:|------:|------------:|----------------:|
+| eLife | 273 | 0.606 | **0.680** | **0.737** | 0.813 |
+| PLOS | 260 | 0.524 | **0.600** | **0.721** | 0.654 |
+| F1000 | 403 | 0.586 | **0.636** | **0.699** | 0.725 |
+| PeerJ | 37 | 0.464 | **0.551** | **0.643** | 0.573 |
+| Nature | 8 | 0.224 | **0.390** | **0.455** | 0.303 |
+
+> Nature remains weakest (8 test articles, 66/4,734 train = 1.4%). Ensemble precision on Nature is 0.913.
 
 ### Phases 0–1 (complete)
 
 - **Phase 0**: Experimental contract frozen — v3 split (4,740/838/981), SPECTER2 matching
 - **Phase 1**: Task-aligned corpora rebuilt — Corpus A (all non-figure, 4,734 train) and Corpus B (high-confidence, 700 train)
 
-### Phases 3–4 (contingency)
+### Phase 3 (planned)
 
-- **Phase 3A**: Section-wise inference (methods/results/discussion separately → merge)
-- **Phase 3B**: Teacher distillation from GPT-4o-mini
-- **Phase 4**: Scale to 14B
+- **Ensemble improvement**: Add 3rd model (different architecture) for diversity; explore weighted merging
+- **Inference speed**: Investigate vLLM/SGLang or fix flash-linear-attention for 9B (~281s → target <60s/article)
+- **Scale to 14B+**: Larger single model to close gap with ensemble
 
 ---
 
@@ -298,13 +280,13 @@ python scripts/ensemble_concerns.py \
 
 ### Phase 2 — Corpus A (all non-figure), v3 split
 
-| Model | Base | GPU | Train time | F1 | Recall | Precision |
-|-------|------|-----|------------|----|--------|-----------|
-| **8B+9B Ensemble** (union) | — | — | — | **0.694** | **0.695** | 0.692 |
-| **Qwen3.5-9B all_nonfig** | Qwen/Qwen3.5-9B | A100 | 35h | **0.625** | 0.504 | 0.823 |
-| Qwen3-8B all_nonfig | Qwen/Qwen3-8B | A100 | ~18h | 0.556 | 0.413 | 0.851 |
+| Model | Base | GPU | Train time | Val F1 | Test F1 | Test Recall | Test Precision |
+|-------|------|-----|------------|-------:|--------:|------------:|---------------:|
+| **8B+9B Ensemble** (union) | — | — | — | 0.694 | **0.704** | **0.695** | 0.713 |
+| **Qwen3.5-9B all_nonfig** | Qwen/Qwen3.5-9B | A100 | 35h | 0.625 | **0.621** | 0.498 | 0.827 |
+| Qwen3-8B all_nonfig | Qwen/Qwen3-8B | A100 | ~18h | 0.556 | 0.557 | 0.409 | 0.871 |
 
-> Inference speed: 8B ~36s/article, 9B ~300s/article (no flash-linear-attention on HPC).
+> Inference speed: 8B ~48s/article, 9B ~281s/article (no flash-linear-attention on HPC).
 
 ### Phase 1 — Corpus B (high-confidence), legacy split
 
