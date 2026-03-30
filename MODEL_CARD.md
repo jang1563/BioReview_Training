@@ -129,6 +129,8 @@ The model returns a **JSON array of concern objects**, each with three fields:
 
 > **Note:** Qwen3.5-9B is a Vision-Language model (`Qwen3_5ForConditionalGeneration`).
 > Load via `AutoProcessor` and use its inner `.tokenizer` for text decoding.
+> The adapter was saved via Unsloth — always pre-load the base model first (as shown below),
+> rather than using `AutoPeftModelForCausalLM.from_pretrained` directly.
 
 ### Installation
 
