@@ -35,15 +35,20 @@
 #SBATCH --mem=48G
 #SBATCH --gres=gpu:a40:1
 #SBATCH --time=10:00:00
-#SBATCH --output=${SCRATCH_DIR:-/path/to/scratch}/BioReview_Training/logs/sweep_%A_%a.log
-#SBATCH --error=${SCRATCH_DIR:-/path/to/scratch}/BioReview_Training/logs/sweep_%A_%a.err
+#SBATCH --output=logs/sweep_%A_%a.log
+#SBATCH --error=logs/sweep_%A_%a.err
 
 # IMPORTANT: Override --array via sbatch CLI to match manifest size.
 # This default (1-4%2) is for stage1_14b only. Use --array=1-N%2 for N experiments.
 #SBATCH --array=1-4%2
 
 # ── Configuration ────────────────────────────────────────────────────────────
-SCRATCH_DIR="${SCRATCH_DIR:-/path/to/scratch}"
+USER_NAME="${USER:-$(id -un)}"
+DEFAULT_SCRATCH_DIR="/athena/masonlab/scratch/users/${USER_NAME}"
+if [ ! -d "${DEFAULT_SCRATCH_DIR}" ] && [ -d "/athena/cayuga_0003/scratch/users/${USER_NAME}" ]; then
+    DEFAULT_SCRATCH_DIR="/athena/cayuga_0003/scratch/users/${USER_NAME}"
+fi
+SCRATCH_DIR="${SCRATCH_DIR:-${DEFAULT_SCRATCH_DIR}}"
 PROJECT_DIR="${SCRATCH_DIR}/BioReview_Training"
 MANIFEST="${MANIFEST:-configs/sweep/stage1_14b/sweep_manifest.csv}"
 SPLIT="${SPLIT:-val}"

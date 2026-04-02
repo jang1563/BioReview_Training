@@ -12,7 +12,12 @@
 #   CONDA_ENV_PATH=/path/to/env source slurm/env_setup.sh
 # ────────────────────────────────────────────────────────────────────────────
 
-SCRATCH_DIR="${SCRATCH_DIR:-/path/to/scratch}"
+USER_NAME="${USER:-$(id -un)}"
+DEFAULT_SCRATCH_DIR="/athena/masonlab/scratch/users/${USER_NAME}"
+if [ ! -d "${DEFAULT_SCRATCH_DIR}" ] && [ -d "/athena/cayuga_0003/scratch/users/${USER_NAME}" ]; then
+    DEFAULT_SCRATCH_DIR="/athena/cayuga_0003/scratch/users/${USER_NAME}"
+fi
+SCRATCH_DIR="${SCRATCH_DIR:-${DEFAULT_SCRATCH_DIR}}"
 
 # Conda env: prefer scratch copy (avoids NFS /home metadata latency)
 CONDA_ENV_PATH="${CONDA_ENV_PATH:-${SCRATCH_DIR}/conda_envs/bioreview-sft}"

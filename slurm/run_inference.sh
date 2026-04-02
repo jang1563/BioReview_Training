@@ -23,11 +23,16 @@
 #SBATCH --mem=48G
 #SBATCH --gres=gpu:a40:1
 #SBATCH --time=04:00:00
-#SBATCH --output=${SCRATCH_DIR:-/path/to/scratch}/BioReview_Training/logs/inference_%j.log
-#SBATCH --error=${SCRATCH_DIR:-/path/to/scratch}/BioReview_Training/logs/inference_%j.err
+#SBATCH --output=logs/inference_%j.log
+#SBATCH --error=logs/inference_%j.err
 
 # ── Configuration (overridable via sbatch --export) ────────────────────────
-SCRATCH_DIR="${SCRATCH_DIR:-/path/to/scratch}"
+USER_NAME="${USER:-$(id -un)}"
+DEFAULT_SCRATCH_DIR="/athena/masonlab/scratch/users/${USER_NAME}"
+if [ ! -d "${DEFAULT_SCRATCH_DIR}" ] && [ -d "/athena/cayuga_0003/scratch/users/${USER_NAME}" ]; then
+    DEFAULT_SCRATCH_DIR="/athena/cayuga_0003/scratch/users/${USER_NAME}"
+fi
+SCRATCH_DIR="${SCRATCH_DIR:-${DEFAULT_SCRATCH_DIR}}"
 PROJECT_DIR="${SCRATCH_DIR}/BioReview_Training"
 MODEL_DIR="${MODEL_DIR:-models/qwen3_8b_all_nonfig_v1}"
 SPLIT="${SPLIT:-val}"

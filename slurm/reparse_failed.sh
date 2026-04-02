@@ -10,11 +10,16 @@
 #SBATCH --mem=48G
 #SBATCH --gres=gpu:a40:1
 #SBATCH --time=03:00:00
-#SBATCH --output=${SCRATCH_DIR:-/path/to/scratch}/BioReview_Training/logs/reparse_%j.log
-#SBATCH --error=${SCRATCH_DIR:-/path/to/scratch}/BioReview_Training/logs/reparse_%j.err
+#SBATCH --output=logs/reparse_%j.log
+#SBATCH --error=logs/reparse_%j.err
 
-SCRATCH_DIR="${SCRATCH_DIR:-/path/to/scratch}"
-PROJECT_DIR="${SCRATCH_DIR:-/path/to/scratch}/BioReview_Training"
+USER_NAME="${USER:-$(id -un)}"
+DEFAULT_SCRATCH_DIR="/athena/masonlab/scratch/users/${USER_NAME}"
+if [ ! -d "${DEFAULT_SCRATCH_DIR}" ] && [ -d "/athena/cayuga_0003/scratch/users/${USER_NAME}" ]; then
+    DEFAULT_SCRATCH_DIR="/athena/cayuga_0003/scratch/users/${USER_NAME}"
+fi
+SCRATCH_DIR="${SCRATCH_DIR:-${DEFAULT_SCRATCH_DIR}}"
+PROJECT_DIR="${SCRATCH_DIR}/BioReview_Training"
 MODEL_DIR="models/qwen3_8b_all_nonfig_v1"
 # Use a dedicated splits dir containing only the 10 failed articles
 SPLITS_DIR="${PROJECT_DIR}/data/splits_reparse"

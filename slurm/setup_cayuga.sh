@@ -18,7 +18,12 @@ set -euo pipefail
 
 CONDA_ENV="bioreview-sft"
 PYTHON_VERSION="3.11"
-SCRATCH_DIR="${SCRATCH_DIR:-/path/to/scratch}"
+USER_NAME="${USER:-$(id -un)}"
+DEFAULT_SCRATCH_DIR="/athena/masonlab/scratch/users/${USER_NAME}"
+if [ ! -d "${DEFAULT_SCRATCH_DIR}" ] && [ -d "/athena/cayuga_0003/scratch/users/${USER_NAME}" ]; then
+    DEFAULT_SCRATCH_DIR="/athena/cayuga_0003/scratch/users/${USER_NAME}"
+fi
+SCRATCH_DIR="${SCRATCH_DIR:-${DEFAULT_SCRATCH_DIR}}"
 PROJECT_DIR="${SCRATCH_DIR}/BioReview_Training"
 CONDA_BASE="${CONDA_BASE:-$(conda info --base 2>/dev/null || true)}"
 

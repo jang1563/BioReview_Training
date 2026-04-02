@@ -35,7 +35,13 @@ CHAT_TEMPLATES = {
         "instruction_template": "<\uff5cUser\uff5c>",
         "response_template": "<\uff5cAssistant\uff5c>",
     },
+    "gemma": {
+        "instruction_template": "<start_of_turn>user\n",
+        "response_template": "<start_of_turn>model\n",
+    },
 }
+
+SYSTEMLESS_TEMPLATE_FAMILIES = {"gemma"}
 
 
 def detect_chat_template_family(tokenizer) -> str:
@@ -51,9 +57,53 @@ def detect_chat_template_family(tokenizer) -> str:
         return "chatml"
     if "\uff5cUser\uff5c" in formatted:
         return "deepseek"
+    if "<start_of_turn>" in formatted:
+        return "gemma"
     raise ValueError(
         f"Unknown chat template. Sample output:\n{formatted[:300]}"
     )
+
+
+def normalize_messages_for_template(
+    messages: list[dict], template_family: str
+) -> list[dict]:
+    """Adapt messages for chat templates that do not support system turns."""
+    if template_family not in SYSTEMLESS_TEMPLATE_FAMILIES:
+        return messages
+
+    normalized: list[dict] = []
+    pending_system: list[str] = []
+
+    for message in messages:
+        role = str(message.get("role", "")).strip()
+        content = str(message.get("content", "")).strip()
+        if not role or not content:
+            continue
+
+        if role == "system":
+            pending_system.append(content)
+            continue
+
+        if role == "user" and pending_system:
+            content = "\n\n".join([*pending_system, content])
+            pending_system = []
+        elif pending_system:
+            normalized.append({"role": "user", "content": "\n\n".join(pending_system)})
+            pending_system = []
+
+        normalized.append({"role": role, "content": content})
+
+    if pending_system:
+        merged_system = "\n\n".join(pending_system)
+        if normalized and normalized[0]["role"] == "user":
+            normalized[0] = {
+                "role": "user",
+                "content": "\n\n".join([merged_system, normalized[0]["content"]]),
+            }
+        else:
+            normalized.insert(0, {"role": "user", "content": merged_system})
+
+    return normalized
 
 
 def get_text_tokenizer(tokenizer):
@@ -240,6 +290,9 @@ def main() -> None:
     else:
         model, tokenizer = load_model_standard(mcfg, lcfg, tcfg.get("bf16", False))
     text_tokenizer = get_text_tokenizer(tokenizer)
+    template_family = mcfg.get("chat_template") or detect_chat_template_family(
+        tokenizer
+    )
 
     model.print_trainable_parameters()
 
@@ -259,6 +312,7 @@ def main() -> None:
 
     def format_example(example: dict) -> dict:
         messages = sharegpt_to_messages(example["conversations"])
+        messages = normalize_messages_for_template(messages, template_family)
         chat_kwargs = {"tokenize": False, "add_generation_prompt": False}
         if mcfg.get("enable_thinking") is False:
             chat_kwargs["enable_thinking"] = False
@@ -350,9 +404,6 @@ def main() -> None:
 
     # ── Build data collator for response-only loss masking ─────
     data_collator = None
-    template_family = mcfg.get("chat_template") or detect_chat_template_family(
-        tokenizer
-    )
     templates = CHAT_TEMPLATES[template_family]
     print(f"chat template: {template_family}")
 

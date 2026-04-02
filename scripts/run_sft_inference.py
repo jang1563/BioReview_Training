@@ -36,6 +36,8 @@ from pathlib import Path
 
 import yaml
 
+SYSTEMLESS_TEMPLATE_FAMILIES = {"gemma"}
+
 
 # ---------------------------------------------------------------------------
 # JSON output parsing
@@ -291,6 +293,66 @@ def load_model(model_dir: Path, max_seq_length: int, load_in_4bit: bool):
 # ---------------------------------------------------------------------------
 
 
+def detect_chat_template_family(tokenizer) -> str:
+    """Auto-detect chat template family from tokenizer output."""
+    test_messages = [
+        {"role": "user", "content": "X"},
+        {"role": "assistant", "content": "Y"},
+    ]
+    formatted = tokenizer.apply_chat_template(
+        test_messages, tokenize=False, add_generation_prompt=False
+    )
+    if "<|im_start|>" in formatted:
+        return "chatml"
+    if "<｜User｜>" in formatted:
+        return "deepseek"
+    if "<start_of_turn>" in formatted:
+        return "gemma"
+    return "unknown"
+
+
+def normalize_messages_for_template(
+    messages: list[dict], template_family: str
+) -> list[dict]:
+    """Adapt messages for chat templates that do not support system turns."""
+    if template_family not in SYSTEMLESS_TEMPLATE_FAMILIES:
+        return messages
+
+    normalized: list[dict] = []
+    pending_system: list[str] = []
+
+    for message in messages:
+        role = str(message.get("role", "")).strip()
+        content = str(message.get("content", "")).strip()
+        if not role or not content:
+            continue
+
+        if role == "system":
+            pending_system.append(content)
+            continue
+
+        if role == "user" and pending_system:
+            content = "\n\n".join([*pending_system, content])
+            pending_system = []
+        elif pending_system:
+            normalized.append({"role": "user", "content": "\n\n".join(pending_system)})
+            pending_system = []
+
+        normalized.append({"role": role, "content": content})
+
+    if pending_system:
+        merged_system = "\n\n".join(pending_system)
+        if normalized and normalized[0]["role"] == "user":
+            normalized[0] = {
+                "role": "user",
+                "content": "\n\n".join([merged_system, normalized[0]["content"]]),
+            }
+        else:
+            normalized.insert(0, {"role": "user", "content": merged_system})
+
+    return normalized
+
+
 def get_system_prompt(project_root: Path) -> str:
     """Read system prompt from SFT training data for exact match."""
     sft_train_path = project_root / "data" / "sft_train.jsonl"
@@ -334,6 +396,7 @@ def build_inference_prompt(
     entry: dict,
     system_prompt: str,
     tokenizer,
+    template_family: str,
     token_budget: int,
     section_priority: list[str],
     count_tokens,
@@ -357,6 +420,7 @@ def build_inference_prompt(
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_message},
     ]
+    messages = normalize_messages_for_template(messages, template_family)
 
     chat_kwargs = {"tokenize": False, "add_generation_prompt": True}
     if not enable_thinking:
@@ -713,13 +777,18 @@ def main() -> None:
 
     # ── Read enable_thinking from training config ──────────────
     enable_thinking = True
+    template_family = None
     training_config_path = model_dir / "training_config.yaml"
     if training_config_path.exists():
         with training_config_path.open(encoding="utf-8") as f:
             tcfg = yaml.safe_load(f)
         enable_thinking = tcfg.get("model", {}).get("enable_thinking", True)
+        template_family = tcfg.get("model", {}).get("chat_template")
         if not enable_thinking:
             print(f"enable_thinking: False (from training config)")
+    if not template_family:
+        template_family = detect_chat_template_family(tokenizer)
+    print(f"chat template: {template_family}")
 
     # ── Load system prompt and token counter ────────────────────
     system_prompt = get_system_prompt(project_root)
@@ -808,6 +877,7 @@ def main() -> None:
                     entry=entry,
                     system_prompt=system_prompt,
                     tokenizer=tokenizer,
+                    template_family=template_family,
                     token_budget=args.token_budget,
                     section_priority=section_priority,
                     count_tokens=count_tokens,

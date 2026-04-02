@@ -1,37 +1,40 @@
 #!/usr/bin/env python3
-"""Ensemble concerns from two SFT model inference outputs.
+"""Ensemble concerns from 2+ SFT model inference outputs.
 
-Combines inference JSONL outputs from two models (e.g., 8B and 9B) using
-union or intersection strategy, with SPECTER2-based semantic deduplication.
+Combines inference JSONL outputs from multiple models (e.g., 8B, 9B, Gemma)
+using union or intersection strategy, with SPECTER2-based semantic
+deduplication.
 
 For union strategy:
-  - Collect all concerns from both models.
+  - Collect all concerns from all models.
   - Deduplicate using SPECTER2 cosine similarity >= cluster-threshold.
-  - When two concerns cluster together, prefer the one from model-a.
+  - When concerns cluster together, prefer the earliest model in the input
+    order.
 
 For intersection strategy:
-  - Only keep concerns that appear in both models (cross-model similarity
-    >= cluster-threshold).
+  - Only keep concerns that survive iterative matching across all models
+    using the same priority order.
 
 Usage:
   # Union (max recall, dedup at 0.98):
   python scripts/ensemble_concerns.py \\
-      --model-a results/sft_eval/qwen3.5_9b_val.jsonl \\
-      --model-b results/sft_eval/deepseek_r1_14b_val.jsonl \\
+      --model results/sft_eval/qwen3_8b_val.jsonl \\
+      --model results/sft_eval/qwen3.5_9b_val.jsonl \\
+      --model results/sft_eval/gemma2_9b_val.jsonl \\
       --output results/sft_eval/ensemble_union_val.jsonl \\
       --strategy union
 
   # Intersection (high precision):
   python scripts/ensemble_concerns.py \\
-      --model-a results/sft_eval/qwen3.5_9b_val.jsonl \\
-      --model-b results/sft_eval/deepseek_r1_14b_val.jsonl \\
+      --model results/sft_eval/qwen3.5_9b_val.jsonl \\
+      --model results/sft_eval/deepseek_r1_14b_val.jsonl \\
       --output results/sft_eval/ensemble_intersection_val.jsonl \\
       --strategy intersection --cluster-threshold 0.85
 
   # With evaluation:
   python scripts/ensemble_concerns.py \\
-      --model-a results/sft_eval/model_a_val.jsonl \\
-      --model-b results/sft_eval/model_b_val.jsonl \\
+      --model results/sft_eval/model_a_val.jsonl \\
+      --model results/sft_eval/model_b_val.jsonl \\
       --output results/sft_eval/ensemble_union_val.jsonl \\
       --strategy union --evaluate --splits-dir /path/to/splits/v3
 """
@@ -366,31 +369,58 @@ def _extract_concerns(row: dict, source_label: str) -> list[dict]:
     return concerns
 
 
+def _resolve_model_inputs(args: argparse.Namespace) -> list[Path]:
+    """Resolve CLI model inputs, preserving the requested priority order."""
+    repeated_models = args.model or []
+    legacy_models = [path for path in [args.model_a, args.model_b] if path is not None]
+
+    if repeated_models and legacy_models:
+        print(
+            "ERROR: use either repeated --model or legacy --model-a/--model-b, not both.",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+
+    model_paths = repeated_models if repeated_models else legacy_models
+    if len(model_paths) < 2:
+        print(
+            "ERROR: provide at least two model inputs via repeated --model "
+            "or legacy --model-a/--model-b.",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+
+    return model_paths
+
+
 # ---------------------------------------------------------------------------
 # Per-article ensemble
 # ---------------------------------------------------------------------------
 
 
 def ensemble_article(
-    row_a: dict | None,
-    row_b: dict | None,
-    label_a: str,
-    label_b: str,
+    rows: list[dict | None],
+    labels: list[str],
     embedder: Any,
     strategy: str,
     cluster_threshold: float,
 ) -> list[dict]:
     """Ensemble concerns for a single article."""
-    concerns_a = _extract_concerns(row_a, label_a) if row_a else []
-    concerns_b = _extract_concerns(row_b, label_b) if row_b else []
+    concerns_per_model = [
+        _extract_concerns(row, label) if row else []
+        for row, label in zip(rows, labels, strict=True)
+    ]
+    if not concerns_per_model:
+        return []
 
-    if strategy == "union":
-        return _union_dedup(concerns_a, concerns_b, embedder, cluster_threshold)
-    elif strategy == "intersection":
-        return _intersection(concerns_a, concerns_b, embedder, cluster_threshold)
-    else:
-        # Fallback to union
-        return _union_dedup(concerns_a, concerns_b, embedder, cluster_threshold)
+    selected = concerns_per_model[0]
+    for concerns in concerns_per_model[1:]:
+        if strategy == "intersection":
+            selected = _intersection(selected, concerns, embedder, cluster_threshold)
+        else:
+            selected = _union_dedup(selected, concerns, embedder, cluster_threshold)
+
+    return selected
 
 
 # ---------------------------------------------------------------------------
@@ -485,15 +515,16 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = argparse.ArgumentParser(
         description=(
-            "Ensemble concerns from two SFT model outputs using union or "
+            "Ensemble concerns from 2+ SFT model outputs using union or "
             "intersection strategy with SPECTER2 deduplication."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Examples:\n"
             "  python scripts/ensemble_concerns.py \\\n"
-            "      --model-a results/sft_eval/9b_val.jsonl \\\n"
-            "      --model-b results/sft_eval/14b_val.jsonl \\\n"
+            "      --model results/sft_eval/8b_val.jsonl \\\n"
+            "      --model results/sft_eval/9b_val.jsonl \\\n"
+            "      --model results/sft_eval/gemma_val.jsonl \\\n"
             "      --output results/sft_eval/ensemble_union_val.jsonl\n"
             "\n"
             "  python scripts/ensemble_concerns.py \\\n"
@@ -506,16 +537,29 @@ def build_parser() -> argparse.ArgumentParser:
 
     # Input / output
     p.add_argument(
+        "--model",
+        type=Path,
+        action="append",
+        default=None,
+        help=(
+            "Inference JSONL from a model. Repeat this flag for 2+ inputs in "
+            "priority order. Preferred over the legacy --model-a/--model-b flags."
+        ),
+    )
+    p.add_argument(
         "--model-a",
         type=Path,
-        required=True,
-        help="Inference JSONL from model A (preferred for dedup representative).",
+        default=None,
+        help=(
+            "Legacy alias for the first model input "
+            "(preferred for dedup representative)."
+        ),
     )
     p.add_argument(
         "--model-b",
         type=Path,
-        required=True,
-        help="Inference JSONL from model B.",
+        default=None,
+        help="Legacy alias for the second model input.",
     )
     p.add_argument(
         "--output",
@@ -590,24 +634,22 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     args = build_parser().parse_args()
+    model_paths = _resolve_model_inputs(args)
+    labels = [path.stem for path in model_paths]
 
     # Validate input files
-    for label, path in [("model-a", args.model_a), ("model-b", args.model_b)]:
+    for i, path in enumerate(model_paths):
         if not path.exists():
-            print(f"ERROR: --{label} file not found: {path}", file=sys.stderr)
+            print(f"ERROR: model[{i + 1}] file not found: {path}", file=sys.stderr)
             raise SystemExit(1)
-
-    # Derive labels from filenames
-    label_a = args.model_a.stem
-    label_b = args.model_b.stem
 
     print("=" * 60)
     print("Ensemble Concerns")
     print("=" * 60)
     print(f"  strategy:          {args.strategy}")
     print(f"  cluster-threshold: {args.cluster_threshold}")
-    print(f"  model-a:           {args.model_a}  ({label_a})")
-    print(f"  model-b:           {args.model_b}  ({label_b})")
+    for i, (path, label) in enumerate(zip(model_paths, labels, strict=True), start=1):
+        print(f"  model[{i}]:         {path}  ({label})")
     print(f"  output:            {args.output}")
     if args.embed_model:
         print(f"  embed-model:       {args.embed_model}")
@@ -622,34 +664,40 @@ def main() -> None:
 
     # Load model outputs
     print("Loading model outputs...", flush=True)
-    rows_a = _load_jsonl(args.model_a)
-    rows_b = _load_jsonl(args.model_b)
-    grouped_a = _group_by_article(rows_a)
-    grouped_b = _group_by_article(rows_b)
+    grouped_models: list[dict[str, dict]] = []
+    article_sets: list[set[str]] = []
+    total_concerns_by_model: list[int] = []
+    unique_article_sets: list[set[str]] = []
+
+    for path in model_paths:
+        rows = _load_jsonl(path)
+        grouped = _group_by_article(rows)
+        grouped_models.append(grouped)
+        article_sets.append(set(grouped.keys()))
+        total_concerns_by_model.append(
+            sum(len(row.get("concerns", [])) for row in grouped.values())
+        )
 
     # Determine the full set of article IDs
-    all_article_ids = sorted(set(grouped_a.keys()) | set(grouped_b.keys()))
-    articles_only_a = set(grouped_a.keys()) - set(grouped_b.keys())
-    articles_only_b = set(grouped_b.keys()) - set(grouped_a.keys())
-    articles_both = set(grouped_a.keys()) & set(grouped_b.keys())
+    all_article_ids = sorted(set().union(*article_sets))
+    shared_articles = set.intersection(*article_sets)
+    for i, art_set in enumerate(article_sets):
+        other_sets = article_sets[:i] + article_sets[i + 1 :]
+        others_union = set().union(*other_sets) if other_sets else set()
+        unique_article_sets.append(art_set - others_union)
 
-    print(f"  model-a articles:  {len(grouped_a)}")
-    print(f"  model-b articles:  {len(grouped_b)}")
-    print(f"  shared articles:   {len(articles_both)}")
-    print(f"  only in A:         {len(articles_only_a)}")
-    print(f"  only in B:         {len(articles_only_b)}")
+    for label, grouped, unique_set in zip(
+        labels, grouped_models, unique_article_sets, strict=True
+    ):
+        print(f"  {label} articles:  {len(grouped)}")
+        print(f"  only in {label}:   {len(unique_set)}")
+    print(f"  shared articles:   {len(shared_articles)}")
     print(f"  total unique:      {len(all_article_ids)}")
     print()
 
     # Per-model concern counts (before ensemble)
-    total_concerns_a = sum(
-        len(row.get("concerns", [])) for row in grouped_a.values()
-    )
-    total_concerns_b = sum(
-        len(row.get("concerns", [])) for row in grouped_b.values()
-    )
-    print(f"  total concerns A:  {total_concerns_a}")
-    print(f"  total concerns B:  {total_concerns_b}")
+    for label, total_concerns in zip(labels, total_concerns_by_model, strict=True):
+        print(f"  total concerns {label}: {total_concerns}")
     print()
 
     # Ensemble per article
@@ -662,14 +710,9 @@ def main() -> None:
 
     with args.output.open("w", encoding="utf-8") as fh:
         for i, art_id in enumerate(all_article_ids):
-            row_a = grouped_a.get(art_id)
-            row_b = grouped_b.get(art_id)
-
             selected = ensemble_article(
-                row_a=row_a,
-                row_b=row_b,
-                label_a=label_a,
-                label_b=label_b,
+                rows=[grouped.get(art_id) for grouped in grouped_models],
+                labels=labels,
                 embedder=embedder,
                 strategy=args.strategy,
                 cluster_threshold=args.cluster_threshold,
@@ -708,15 +751,14 @@ def main() -> None:
     print("=" * 60)
     print("Summary")
     print("=" * 60)
+    combined_concerns = sum(total_concerns_by_model)
     print(f"  articles processed: {len(all_article_ids)}")
-    print(f"  concerns from A:    {total_concerns_a}")
-    print(f"  concerns from B:    {total_concerns_b}")
-    print(f"  concerns combined:  {total_concerns_a + total_concerns_b}")
+    for label, total_concerns in zip(labels, total_concerns_by_model, strict=True):
+        print(f"  concerns from {label}: {total_concerns}")
+    print(f"  concerns combined:  {combined_concerns}")
     print(f"  concerns after {args.strategy}: {total_after}")
-    if total_concerns_a + total_concerns_b > 0:
-        dedup_pct = (
-            1.0 - total_after / (total_concerns_a + total_concerns_b)
-        ) * 100
+    if combined_concerns > 0:
+        dedup_pct = (1.0 - total_after / combined_concerns) * 100
         print(f"  dedup reduction:    {dedup_pct:.1f}%")
     if len(all_article_ids) > 0:
         print(f"  avg concerns/article: {total_after / len(all_article_ids):.1f}")
@@ -729,23 +771,37 @@ def main() -> None:
         "model_dir": str(args.output.parent / f"ensemble_{args.strategy}"),
         "strategy": args.strategy,
         "cluster_threshold": args.cluster_threshold,
-        "model_a": str(args.model_a),
-        "model_b": str(args.model_b),
-        "label_a": label_a,
-        "label_b": label_b,
+        "models": [str(path) for path in model_paths],
+        "labels": labels,
         "stats": {
             "articles_processed": len(all_article_ids),
-            "articles_shared": len(articles_both),
-            "articles_only_a": len(articles_only_a),
-            "articles_only_b": len(articles_only_b),
-            "concerns_from_a": total_concerns_a,
-            "concerns_from_b": total_concerns_b,
-            "concerns_combined": total_concerns_a + total_concerns_b,
+            "articles_shared": len(shared_articles),
+            "articles_unique_by_model": {
+                label: len(unique_set)
+                for label, unique_set in zip(labels, unique_article_sets, strict=True)
+            },
+            "concerns_by_model": {
+                label: total_concerns
+                for label, total_concerns in zip(
+                    labels, total_concerns_by_model, strict=True
+                )
+            },
+            "concerns_combined": combined_concerns,
             "concerns_after_merge": total_after,
             "empty_articles": n_empty,
             "elapsed_s": round(elapsed, 2),
         },
     }
+
+    if len(model_paths) == 2:
+        summary["model_a"] = str(model_paths[0])
+        summary["model_b"] = str(model_paths[1])
+        summary["label_a"] = labels[0]
+        summary["label_b"] = labels[1]
+        summary["stats"]["articles_only_a"] = len(unique_article_sets[0])
+        summary["stats"]["articles_only_b"] = len(unique_article_sets[1])
+        summary["stats"]["concerns_from_a"] = total_concerns_by_model[0]
+        summary["stats"]["concerns_from_b"] = total_concerns_by_model[1]
 
     # Evaluation
     if args.evaluate:
