@@ -111,6 +111,69 @@ def get_text_tokenizer(tokenizer):
     return getattr(tokenizer, "tokenizer", tokenizer)
 
 
+def set_truncation_side(tokenizer, side: str) -> None:
+    """Apply a truncation side consistently to tokenizer wrappers and base tokenizers."""
+    if side not in {"left", "right"}:
+        raise ValueError(f"Unsupported truncation side: {side}")
+
+    text_tokenizer = get_text_tokenizer(tokenizer)
+    for candidate in (tokenizer, text_tokenizer):
+        if hasattr(candidate, "truncation_side"):
+            candidate.truncation_side = side
+
+
+def contains_token_subsequence(token_ids: list[int], needle: list[int]) -> bool:
+    """Return True when `needle` appears contiguously within `token_ids`."""
+    if not needle or len(needle) > len(token_ids):
+        return False
+
+    first = needle[0]
+    window = len(needle)
+    for idx, token_id in enumerate(token_ids[:-window + 1]):
+        if token_id == first and token_ids[idx : idx + window] == needle:
+            return True
+    return False
+
+
+def audit_response_truncation(
+    dataset,
+    text_tokenizer,
+    max_seq_length: int,
+    response_template: str,
+    sample_size: int = 128,
+) -> dict[str, int]:
+    """Estimate how many samples retain the response marker after truncation."""
+    total = min(sample_size, len(dataset))
+    if total == 0:
+        return {"sampled": 0, "over_limit": 0, "response_found": 0}
+
+    response_ids = text_tokenizer.encode(
+        response_template, add_special_tokens=False
+    )
+    over_limit = 0
+    response_found = 0
+    truncation_side = getattr(text_tokenizer, "truncation_side", "right")
+
+    for idx in range(total):
+        token_ids = text_tokenizer.encode(
+            dataset[idx]["text"], add_special_tokens=False
+        )
+        if len(token_ids) > max_seq_length:
+            over_limit += 1
+            if truncation_side == "left":
+                token_ids = token_ids[-max_seq_length:]
+            else:
+                token_ids = token_ids[:max_seq_length]
+        if contains_token_subsequence(token_ids, response_ids):
+            response_found += 1
+
+    return {
+        "sampled": total,
+        "over_limit": over_limit,
+        "response_found": response_found,
+    }
+
+
 def load_config(path: Path) -> dict:
     with path.open(encoding="utf-8") as f:
         return yaml.safe_load(f)
@@ -290,6 +353,13 @@ def main() -> None:
     else:
         model, tokenizer = load_model_standard(mcfg, lcfg, tcfg.get("bf16", False))
     text_tokenizer = get_text_tokenizer(tokenizer)
+    response_only_enabled = not args.no_response_only
+    truncation_side = mcfg.get("truncation_side")
+    if truncation_side is None:
+        truncation_side = "left" if response_only_enabled else getattr(
+            text_tokenizer, "truncation_side", "right"
+        )
+    set_truncation_side(tokenizer, truncation_side)
     template_family = mcfg.get("chat_template") or detect_chat_template_family(
         tokenizer
     )
@@ -332,6 +402,34 @@ def main() -> None:
     sample_tokens = len(text_tokenizer.encode(sample_text))
     print(f"sample: {len(sample_text)} chars, ~{sample_tokens} tokens")
     print(f"preview:\n{sample_text[:300]}...")
+    print(f"truncation_side: {truncation_side}")
+
+    templates = CHAT_TEMPLATES[template_family]
+    if response_only_enabled:
+        response_audit = audit_response_truncation(
+            train_ds,
+            text_tokenizer,
+            mcfg["max_seq_length"],
+            templates["response_template"],
+        )
+        print(
+            "response marker after truncation "
+            f"(sampled {response_audit['sampled']}): "
+            f"{response_audit['response_found']}/{response_audit['sampled']} retained"
+        )
+        print(
+            f"  over max_seq_length in sample: {response_audit['over_limit']}/"
+            f"{response_audit['sampled']}"
+        )
+        if (
+            response_audit["over_limit"] > 0
+            and response_audit["response_found"] < response_audit["sampled"]
+        ):
+            print(
+                "WARNING: some sampled examples still lose the assistant response after "
+                "truncation; consider reducing max_seq_length pressure or disabling "
+                "response-only masking."
+            )
 
     if args.dry_run:
         # Compute token length distribution
@@ -404,7 +502,6 @@ def main() -> None:
 
     # ── Build data collator for response-only loss masking ─────
     data_collator = None
-    templates = CHAT_TEMPLATES[template_family]
     print(f"chat template: {template_family}")
 
     if not args.no_response_only and not use_unsloth:
