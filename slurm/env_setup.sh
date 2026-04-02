@@ -37,6 +37,7 @@ export CONDA_DEFAULT_ENV="bioreview-sft"
 # HuggingFace / torch caches → scratch
 export HF_HOME="${SCRATCH_DIR}/huggingface"
 export TORCH_HOME="${SCRATCH_DIR}/cache/torch"
+export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 
 # Speed up torch import: lazy-load CUDA modules (~73s → faster)
 export CUDA_MODULE_LOADING=LAZY
