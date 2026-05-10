@@ -10,7 +10,7 @@ Fine-tunes open-source LLMs to identify specific scientific concerns in biomedic
 
 | Rank | Model | F1 | Recall | Precision | Recall (major) | Gate |
 |---:|-------|---:|-------:|----------:|---------------:|------|
-| -- | GPT-4o-mini (baseline) | 0.696* | 0.647* | 0.753* | — | PASS |
+| -- | GPT-4o-mini (baseline) | 0.696* | 0.647* | 0.753* | – | PASS |
 | 1 | **8B+9B Ensemble** (union, dedup+cap20) | **0.704** | **0.695** | 0.713 | **0.814** | **PASS** |
 | 2 | **Qwen3.5-9B** (SFT, dedup+cap20) | **0.621** | 0.498 | 0.827 | 0.638 | **PASS** |
 | 3 | Qwen3-8B (SFT, dedup+cap20) | 0.557 | 0.409 | 0.871 | 0.548 | FAIL |
@@ -27,10 +27,10 @@ Fine-tunes open-source LLMs to identify specific scientific concerns in biomedic
 
 **Key findings:**
 - **8B+9B ensemble exceeds GPT-4o-mini** (F1=0.704 vs 0.696) with **81.4% recall on major concerns**
-- **Data–task alignment is critical** — Corpus A (all non-figure) improved single-model F1 from 0.43 → 0.63
-- **Models are complementary** — only 8.4% of combined concerns overlap; union ensemble captures both
-- **Dedup+cap20 is essential** — removes ~50% of raw output, improving F1 by +0.11 (9B: 0.514 → 0.625)
-- **9B precision is exceptional** — 0.827 precision after postprocessing vs GPT-4o-mini's 0.753
+- **Data–task alignment is critical**: Corpus A (all non-figure) improved single-model F1 from 0.43 → 0.63
+- **Models are complementary**: only 8.4% of combined concerns overlap; union ensemble captures both
+- **Dedup+cap20 is essential**: removes ~50% of raw output, improving F1 by +0.11 (9B: 0.514 → 0.625)
+- **9B precision is exceptional**: 0.827 precision after postprocessing vs GPT-4o-mini's 0.753
 
 **Success gates:** F1 >= 0.58 or Recall >= 0.45
 
@@ -38,13 +38,13 @@ Fine-tunes open-source LLMs to identify specific scientific concerns in biomedic
 
 ## Current Status (2026-03-29)
 
-### Phase 2: Task-aligned corpus training — COMPLETE ✓
+### Phase 2: Task-aligned corpus training: COMPLETE ✓
 
-**Test set evaluation complete.** No overfitting — val and test metrics within 0.01.
+**Test set evaluation complete.** No overfitting: val and test metrics within 0.01.
 
 | Model | Corpus | Training | Val F1 | Test F1 | Gate |
 |-------|--------|----------|-------:|--------:|------|
-| **8B+9B Ensemble** | — | — | 0.694 | **0.704** | **PASS** |
+| **8B+9B Ensemble** | – | – | 0.694 | **0.704** | **PASS** |
 | Qwen3.5-9B all_nonfig | A (4,734 articles) | 1,773 steps, 3 epochs, 35h | 0.625 | **0.621** | **PASS** |
 | Qwen3-8B all_nonfig | A (4,734 articles) | 1,773 steps, 3 epochs, ~18h | 0.556 | 0.557 | FAIL |
 
@@ -84,8 +84,8 @@ Fine-tunes open-source LLMs to identify specific scientific concerns in biomedic
 
 ### Phases 0–1 (complete)
 
-- **Phase 0**: Experimental contract frozen — v3 split (4,740/838/981), SPECTER2 matching
-- **Phase 1**: Task-aligned corpora rebuilt — Corpus A (all non-figure, 4,734 train) and Corpus B (high-confidence, 700 train)
+- **Phase 0**: Experimental contract frozen: v3 split (4,740/838/981), SPECTER2 matching
+- **Phase 1**: Task-aligned corpora rebuilt: Corpus A (all non-figure, 4,734 train) and Corpus B (high-confidence, 700 train)
 
 ### Phase 3 (planned)
 
@@ -216,7 +216,7 @@ python scripts/prepare_sft_data.py \
 # Sync to HPC
 bash slurm/sync_to_hpc.sh
 
-# Submit training (A100 recommended — A40 OOM at max_seq_length=16384)
+# Submit training (A100 recommended: A40 OOM at max_seq_length=16384)
 /opt/ohpc/pub/software/slurm/24.05.2/bin/sbatch \
     --gres=gpu:a100:1 --mem=80G \
     --export=ALL,CONFIG=configs/qwen3_8b_all_nonfig.yaml \
@@ -278,17 +278,17 @@ python scripts/ensemble_concerns.py \
 
 ## Models
 
-### Phase 2 — Corpus A (all non-figure), v3 split
+### Phase 2: Corpus A (all non-figure), v3 split
 
 | Model | Base | GPU | Train time | Val F1 | Test F1 | Test Recall | Test Precision |
 |-------|------|-----|------------|-------:|--------:|------------:|---------------:|
-| **8B+9B Ensemble** (union) | — | — | — | 0.694 | **0.704** | **0.695** | 0.713 |
+| **8B+9B Ensemble** (union) | – | – | – | 0.694 | **0.704** | **0.695** | 0.713 |
 | **Qwen3.5-9B all_nonfig** | Qwen/Qwen3.5-9B | A100 | 35h | 0.625 | **0.621** | 0.498 | 0.827 |
 | Qwen3-8B all_nonfig | Qwen/Qwen3-8B | A100 | ~18h | 0.556 | 0.557 | 0.409 | 0.871 |
 
 > Inference speed: 8B ~48s/article, 9B ~281s/article (no flash-linear-attention on HPC).
 
-### Phase 1 — Corpus B (high-confidence), legacy split
+### Phase 1: Corpus B (high-confidence), legacy split
 
 > *Legacy results on 982-article val split. Not directly comparable to Phase 2.*
 
@@ -387,7 +387,7 @@ Three failure classes identified:
 2. **Under-generation** (eLife/Nature): Conservative 3–4 concerns/article vs GT ~9–14
 3. **Over-generation** (F1000/PLOS/PeerJ): 50–140 concerns/article, many duplicates. Fixed by dedup+cap20
 
-**Weakest categories:** `reagent_method_specificity` (R=0.33) and `statistical_methodology` (R=0.39) — both sparse in training data (absent in 60%+ of articles).
+**Weakest categories:** `reagent_method_specificity` (R=0.33) and `statistical_methodology` (R=0.39): both sparse in training data (absent in 60%+ of articles).
 
 **Severity prioritization** (positive): Model correctly finds major concerns (R=0.45) better than minor (R=0.35) and optional (R=0.29).
 
@@ -440,9 +440,9 @@ Requires **sibling directory** `../peer-review-benchmark/` for:
 If you use this work, please cite:
 
 ```bibtex
-@software{bioreview_training_2026,
+@software{kim2026bioreviewtraining,
   title = {BioReview Training: QLoRA SFT Pipeline for Biomedical Peer-Review LLMs},
-  author = {Jang, Andrew},
+  author = {Kim, JangKeun},
   year = {2026},
   url = {https://github.com/jang1563/BioReview_Training}
 }
