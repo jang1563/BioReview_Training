@@ -1,0 +1,22 @@
+{
+  "input": "results/sft_eval/qwen3_8b_all_nonfig_v1_test.jsonl",
+  "output": "results/sft_eval/qwen3_8b_all_nonfig_v1_test.dedup_cap20.jsonl",
+  "dedup_exact": true,
+  "cap": 20,
+  "rows": 981,
+  "total_concerns_before": 13151,
+  "total_concerns_after": 6555,
+  "total_removed": 6596,
+  "total_categories_fixed": 2,
+  "eval_metrics": {
+    "recall_overall": 0.4091919409191941,
+    "precision_overall": 0.8706331045003813,
+    "f1_micro": 0.5567261730562871,
+    "recall_major": 0.5482345898169338,
+    "n_articles": 981,
+    "n_human_concerns": 13947,
+    "n_tool_concerns": 6555,
+    "n_zero_recall_articles": 22,
+    "n_perfect_recall_articles": 221
+  }
+}

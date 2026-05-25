@@ -16,6 +16,8 @@ Fine-tunes open-source LLMs to identify specific scientific concerns in biomedic
 | 3 | Qwen3-8B (SFT, dedup+cap20) | 0.557 | 0.409 | 0.871 | 0.548 | FAIL |
 
 > *\*GPT-4o-mini baseline evaluated on val split only. Test results pending.*
+>
+> **Reproducibility.** All Phase 2 SFT test-set numbers in this leaderboard are derived from committed summary files in [`results/sft_eval/`](results/sft_eval/): `ensemble_8b_9b_union_test.summary.json` (F1=0.7038), `qwen3.5_9b_all_nonfig_v1_test.dedup_cap20.summary.json` (F1=0.6213), and `qwen3_8b_all_nonfig_v1_test.dedup_cap20.summary.json` (F1=0.5567). The raw inference JSONL files were generated on HPC and are not committed due to size (~40 MB); rsync paths are in [`CODEX_HANDOFF.md`](CODEX_HANDOFF.md).
 
 **Val/Test consistency (no overfitting):**
 
@@ -40,7 +42,7 @@ Fine-tunes open-source LLMs to identify specific scientific concerns in biomedic
 
 ### Phase 2: Task-aligned corpus training: COMPLETE ✓
 
-**Test set evaluation complete.** No overfitting: val and test metrics within 0.01.
+**Test set evaluation complete.** No overfitting: val and test metrics within 0.01. Per-model test-set summary JSONs are committed in [`results/sft_eval/`](results/sft_eval/).
 
 | Model | Corpus | Training | Val F1 | Test F1 | Gate |
 |-------|--------|----------|-------:|--------:|------|

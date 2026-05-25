@@ -1,0 +1,32 @@
+{
+  "model_dir": "results/sft_eval/ensemble_union",
+  "strategy": "union",
+  "cluster_threshold": 0.98,
+  "model_a": "results/sft_eval/qwen3_8b_all_nonfig_v1_test.dedup_cap20.jsonl",
+  "model_b": "results/sft_eval/qwen3.5_9b_all_nonfig_v1_test.dedup_cap20.jsonl",
+  "label_a": "qwen3_8b_all_nonfig_v1_test.dedup_cap20",
+  "label_b": "qwen3.5_9b_all_nonfig_v1_test.dedup_cap20",
+  "stats": {
+    "articles_processed": 981,
+    "articles_shared": 981,
+    "articles_only_a": 0,
+    "articles_only_b": 0,
+    "concerns_from_a": 6555,
+    "concerns_from_b": 8391,
+    "concerns_combined": 14946,
+    "concerns_after_merge": 13583,
+    "empty_articles": 2,
+    "elapsed_s": 123.35
+  },
+  "eval_metrics": {
+    "recall_overall": 0.6946296694629669,
+    "precision_overall": 0.7132444967974674,
+    "f1_micro": 0.7038140210679258,
+    "recall_major": 0.8140329049010278,
+    "n_articles": 981,
+    "n_human_concerns": 13947,
+    "n_tool_concerns": 13583,
+    "n_zero_recall_articles": 5,
+    "n_perfect_recall_articles": 548
+  }
+}

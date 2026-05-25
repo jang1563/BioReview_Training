@@ -19,7 +19,11 @@ results/baselines/
 logs/
 
 # SFT evaluation results (generated)
-results/sft_eval/
+# Keep small *.summary.json files for headline-claim provenance;
+# exclude large raw inference JSONL (multi-MB each) and other generated artifacts.
+results/sft_eval/*.jsonl
+results/sft_eval/*.json
+!results/sft_eval/*.summary.json
 
 # Python
 __pycache__/
