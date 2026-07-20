@@ -1,25 +1,41 @@
 # BioReview Training
 
-QLoRA SFT (Supervised Fine-Tuning) pipeline for training biomedical peer-review LLMs on the [peer-review-benchmark](https://github.com/jang1563/peer-review-benchmark) dataset.
+BioReview Training is a QLoRA supervised fine-tuning (SFT) pipeline for
+biomedical peer-review language models evaluated with BioReview-Bench v3.
+
+> **Public-release boundary.** This repository publishes the training and
+> evaluation code, configurations, and committed summary artifacts. The
+> BioReview-Bench corpus and evaluation package, raw inference JSONL files, and
+> trained adapters are not part of this public release.
 
 ## Overview
 
-Fine-tunes open-source LLMs to identify specific scientific concerns in biomedical papers, evaluated against human reviewer annotations using SPECTER2 semantic matching + Hungarian algorithm.
+The pipeline fine-tunes open-weight language models to identify specific
+scientific concerns in biomedical papers. Evaluation compares model outputs
+with human reviewer annotations using SPECTER2 semantic embeddings and the
+Hungarian algorithm.
 
-**Leaderboard (peer-review-benchmark v3 test split, 981 articles):**
+**Evaluation summary (BioReview-Bench v3):**
 
-| Rank | Model | F1 | Recall | Precision | Recall (major) | Gate |
-|---:|-------|---:|-------:|----------:|---------------:|------|
-| -- | GPT-4o-mini (baseline) | 0.696* | 0.647* | 0.753* | – | PASS |
-| 1 | **8B+9B Ensemble** (union, dedup+cap20) | **0.704** | **0.695** | 0.713 | **0.814** | **PASS** |
-| 2 | **Qwen3.5-9B** (SFT, dedup+cap20) | **0.621** | 0.498 | 0.827 | 0.638 | **PASS** |
-| 3 | Qwen3-8B (SFT, dedup+cap20) | 0.557 | 0.409 | 0.871 | 0.548 | FAIL |
+| Rank | Model | Split | F1 | Recall | Precision | Recall (major) | Gate |
+|---:|-------|-------|---:|-------:|----------:|---------------:|------|
+| – | GPT-4o-mini (contextual baseline) | validation* | 0.696 | 0.647 | 0.753 | – | – |
+| 1 | **8B+9B Ensemble** (union, dedup+cap20) | test | **0.704** | **0.695** | 0.713 | **0.814** | **PASS** |
+| 2 | **Qwen3.5-9B** (SFT, dedup+cap20) | test | **0.621** | 0.498 | 0.827 | 0.638 | **PASS** |
+| 3 | Qwen3-8B (SFT, dedup+cap20) | test | 0.557 | 0.409 | 0.871 | 0.548 | FAIL |
 
-> *\*GPT-4o-mini baseline evaluated on val split only. Test results pending.*
+> *GPT-4o-mini was evaluated on a different validation split. Its metrics are
+> contextual only and are not directly comparable with the v3 test results.*
 >
-> **Reproducibility.** All Phase 2 SFT test-set numbers in this leaderboard are derived from committed summary files in [`results/sft_eval/`](results/sft_eval/): `ensemble_8b_9b_union_test.summary.json` (F1=0.7038), `qwen3.5_9b_all_nonfig_v1_test.dedup_cap20.summary.json` (F1=0.6213), and `qwen3_8b_all_nonfig_v1_test.dedup_cap20.summary.json` (F1=0.5567). The raw inference JSONL files were generated on HPC and are not committed due to size (~40 MB); rsync paths are in [`CODEX_HANDOFF.md`](CODEX_HANDOFF.md).
+> **Reproducibility.** All Phase 2 SFT test-set numbers in this table are
+> derived from committed summary files in [`results/sft_eval/`](results/sft_eval/):
+> `ensemble_8b_9b_union_test.summary.json` (F1 = 0.7038),
+> `qwen3.5_9b_all_nonfig_v1_test.dedup_cap20.summary.json` (F1 = 0.6213), and
+> `qwen3_8b_all_nonfig_v1_test.dedup_cap20.summary.json` (F1 = 0.5567). Raw
+> inference JSONL files were generated on HPC and are omitted because of their
+> size (~40 MB).
 
-**Val/Test consistency (no overfitting):**
+**Validation/test F1 comparison:**
 
 | Model | Val F1 | Test F1 | Delta |
 |-------|-------:|--------:|------:|
@@ -27,14 +43,23 @@ Fine-tunes open-source LLMs to identify specific scientific concerns in biomedic
 | Qwen3.5-9B | 0.625 | 0.621 | -0.004 |
 | Qwen3-8B | 0.556 | 0.557 | +0.001 |
 
-**Key findings:**
-- **8B+9B ensemble exceeds GPT-4o-mini** (F1=0.704 vs 0.696) with **81.4% recall on major concerns**
-- **Data–task alignment is critical**: Corpus A (all non-figure) improved single-model F1 from 0.43 → 0.63
-- **Models are complementary**: only 8.4% of combined concerns overlap; union ensemble captures both
-- **Dedup+cap20 is essential**: removes ~50% of raw output, improving F1 by +0.11 (9B: 0.514 → 0.625)
-- **9B precision is exceptional**: 0.827 precision after postprocessing vs GPT-4o-mini's 0.753
+Validation and test F1 differ by 0.004 for Qwen3.5-9B and by 0.001 for
+Qwen3-8B.
 
-**Success gates:** F1 >= 0.58 or Recall >= 0.45
+**Key findings:**
+- **Ensemble performance:** the 8B+9B ensemble reaches F1 = 0.704 and 81.4%
+  recall on major concerns on the v3 test split.
+- **Task-aligned corpus:** the Corpus A run reaches validation F1 = 0.625 with
+  Qwen3.5-9B; legacy Corpus B results use a different split and are reported
+  separately.
+- **Complementarity:** semantic merging removes 1,363 of 14,946 combined
+  concerns (9.1%), leaving 13,583 concerns in the union ensemble.
+- **Dedup+cap20 is material:** for the 9B test run, it removes 9,068 of 17,459
+  concerns and raises F1 from 0.514 to 0.621.
+- **High single-model precision:** the postprocessed 9B test run reaches 0.827
+  precision.
+
+**Success gates:** F1 ≥ 0.58 or recall ≥ 0.45
 
 ---
 
@@ -42,7 +67,9 @@ Fine-tunes open-source LLMs to identify specific scientific concerns in biomedic
 
 ### Phase 2: Task-aligned corpus training: COMPLETE ✓
 
-**Test set evaluation complete.** No overfitting: val and test metrics within 0.01. Per-model test-set summary JSONs are committed in [`results/sft_eval/`](results/sft_eval/).
+**Test-set evaluation complete.** The single-model validation and test F1
+values differ by no more than 0.004. Per-model test-set summary JSON files are
+committed in [`results/sft_eval/`](results/sft_eval/).
 
 | Model | Corpus | Training | Val F1 | Test F1 | Gate |
 |-------|--------|----------|-------:|--------:|------|
@@ -91,7 +118,7 @@ Fine-tunes open-source LLMs to identify specific scientific concerns in biomedic
 
 ### Phase 3 (planned)
 
-- **Ensemble improvement**: Add 3rd model (different architecture) for diversity; explore weighted merging
+- **Ensemble improvement**: Add a third model with a different architecture for diversity; explore weighted merging
 - **Inference speed**: Investigate vLLM/SGLang or fix flash-linear-attention for 9B (~281s → target <60s/article)
 - **Scale to 14B+**: Larger single model to close gap with ensemble
 
@@ -167,6 +194,10 @@ BioReview_Training/
 
 ## Quick Start
 
+End-to-end data preparation and evaluation require the access-controlled
+BioReview-Bench corpus and package. The commands below document the original
+training run; they are not a clean-clone reproduction path.
+
 ### 1. Setup
 
 ```bash
@@ -175,13 +206,14 @@ cd BioReview_Training
 pip install -r requirements-train.txt
 
 # Cache SPECTER2 locally (REQUIRED for evaluation)
-# Without it, evaluation silently falls back to Jaccard → garbage scores (~F1=0.03)
+# Without it, evaluation silently falls back to Jaccard, producing invalid scores (~F1 = 0.03)
 python scripts/download_specter2.py
 ```
 
 ### 2. Prepare training data
 
-Requires [`peer-review-benchmark/`](https://github.com/jang1563/peer-review-benchmark) in the sibling directory.
+Requires the access-controlled BioReview-Bench package in the sibling directory
+`../peer-review-benchmark/`.
 
 ```bash
 # Corpus A: task-aligned (all non-figure concerns, all 5 sources)
@@ -339,7 +371,9 @@ results/sft_eval/<name>_val_dedup_cap20.jsonl  (postprocessed)
 
 ### System prompt
 
-Located in `../peer-review-benchmark/bioreview_bench/baseline/reviewer.py` (`REVIEWER_SYSTEM`).
+The original system prompt is defined in the access-controlled BioReview-Bench
+package at `../peer-review-benchmark/bioreview_bench/baseline/reviewer.py`
+(`REVIEWER_SYSTEM`).
 
 Key rules:
 1. Generate **10–15** specific, actionable concerns
@@ -366,7 +400,8 @@ Key rules:
 
 ## Evaluation
 
-Uses **SPECTER2** semantic embeddings + Hungarian algorithm (threshold 0.65).
+Uses **SPECTER2** semantic embeddings and the Hungarian algorithm (threshold
+0.65).
 
 > **Critical:** SPECTER2 must be available. Without it, evaluation silently falls back to Jaccard similarity (word overlap), giving misleadingly low scores (~F1=0.03 instead of ~0.55). Always run `scripts/download_specter2.py` first.
 
@@ -383,13 +418,15 @@ Uses **SPECTER2** semantic embeddings + Hungarian algorithm (threshold 0.65).
 
 ### Error analysis
 
-Three failure classes identified:
+Three failure classes were identified:
 
 1. **Parse failure** (10/838 articles, 1.2%): Model cannot produce valid JSON. Recall ceiling: ~0.98
 2. **Under-generation** (eLife/Nature): Conservative 3–4 concerns/article vs GT ~9–14
 3. **Over-generation** (F1000/PLOS/PeerJ): 50–140 concerns/article, many duplicates. Fixed by dedup+cap20
 
-**Weakest categories:** `reagent_method_specificity` (R=0.33) and `statistical_methodology` (R=0.39): both sparse in training data (absent in 60%+ of articles).
+**Weakest categories:** `reagent_method_specificity` (R = 0.33) and
+`statistical_methodology` (R = 0.39); both are sparse in the training data
+(absent from more than 60% of articles).
 
 **Severity prioritization** (positive): Model correctly finds major concerns (R=0.45) better than minor (R=0.35) and optional (R=0.29).
 
@@ -400,10 +437,13 @@ Three failure classes identified:
 ### Data–Task Alignment (primary issue)
 - Phase 1 training used `resolution_confidence ≥ 0.8` → 93% eLife, avg 6.9 concerns/article
 - Benchmark evaluates all non-figure concerns → avg 14.2 concerns across all 5 sources
-- **Fix (Phase 2):** Corpus A (conf ≥ 0.0) restores source balance and concern density → F1 improved from 0.43 to 0.56
+- **Phase 2:** The task-aligned Corpus A run reaches validation F1 = 0.625 with
+  Qwen3.5-9B. Legacy Corpus B results are reported separately because they use
+  a different split.
 
 ### SPECTER2 Evaluation
-- **Silent fallback**: Without weight files, evaluation uses Jaccard → ~F1=0.03 (garbage)
+- **Silent fallback**: Without weight files, evaluation uses Jaccard and produces
+  invalid scores (~F1 = 0.03)
 - **Matching threshold insensitive**: 0.50–0.75 all give identical F1 (bimodal distribution)
 - **Ensemble cluster threshold**: Must use 0.98. Lower thresholds cause transitivity chaining
 
@@ -414,7 +454,8 @@ Three failure classes identified:
 - **DeepSeek-R1**: Outputs bare JSON `{…}, {…}]` without leading `[`. Fixed in parser
 
 ### Output Format
-- 35% of raw model output are duplicate concerns → dedup is essential
+- Thirty-five percent of raw model outputs are duplicate concerns, making
+  deduplication essential.
 - Over-generation concentrated in F1000/PLOS/PeerJ (multi-reviewer, long papers)
 
 ---
@@ -430,7 +471,8 @@ pip install -r requirements-train.txt
 pip install unsloth
 ```
 
-Requires **sibling directory** `../peer-review-benchmark/` for:
+Requires the access-controlled BioReview-Bench package in the sibling directory
+`../peer-review-benchmark/` for:
 - Splits: `data/splits/v3/{train,val,test}.jsonl`
 - Evaluation: `bioreview_bench.evaluate.runner`
 - System prompt: `bioreview_bench/baseline/reviewer.py`
