@@ -35,25 +35,27 @@ model-index:
 
 # BioReview SFT — Qwen3.5-9B (all_nonfig)
 
-QLoRA fine-tuned model for identifying scientific concerns in biomedical research papers.
-Trained on the [peer-review-benchmark](https://github.com/jang1563/peer-review-benchmark) dataset.
+A QLoRA-fine-tuned model for identifying scientific concerns in biomedical
+research papers. It was trained on the access-controlled BioReview-Bench v3
+corpus.
 
 > **F1 = 0.621 · Recall = 0.498 · Precision = 0.827** (test set, dedup+cap20 postprocessing)
-> Precision exceeds GPT-4o-mini (0.827 vs 0.753). For maximum recall, use the 8B+9B union ensemble (F1 = 0.704).
+> Among the evaluated SFT configurations, the 8B+9B union ensemble has the
+> highest test F1 (0.704) and recall (0.695).
 
 ---
 
 ## Model Description
 
 This model was trained with supervised fine-tuning (SFT) and QLoRA on the
-[peer-review-benchmark v3](https://github.com/jang1563/peer-review-benchmark) dataset.
+access-controlled BioReview-Bench v3 corpus.
 Given the full text of a biomedical paper, it generates a structured list of scientific
 concerns a peer reviewer might raise, each annotated with category and severity.
 
 | | |
 |---|---|
 | **Base model** | [Qwen/Qwen3.5-9B](https://huggingface.co/Qwen/Qwen3.5-9B) |
-| **Model class** | `Qwen3_5ForConditionalGeneration` (Vision-Language; text-only fine-tune) |
+| **Model class** | `Qwen3_5ForConditionalGeneration` (vision-language; text-only fine-tuning) |
 | **Training method** | QLoRA — 4-bit NF4 quantization, LoRA rank=16, alpha=32 |
 | **Training data** | 4,734 articles · 5 journal sources (eLife, F1000Research, PLOS, PeerJ, Nature) |
 | **Training duration** | ~35 h on 1× NVIDIA A100 80 GB · 3 epochs · 1,773 steps |
@@ -64,8 +66,9 @@ concerns a peer reviewer might raise, each annotated with category and severity.
 
 ## Performance
 
-Evaluated on the **peer-review-benchmark v3 test split (981 articles)** using
-SPECTER2 semantic embeddings + Hungarian algorithm (matching threshold = 0.65).
+Evaluated on the **BioReview-Bench v3 test split (981 articles)** using
+SPECTER2 semantic embeddings and the Hungarian algorithm (matching threshold =
+0.65).
 
 ### Test Set
 
@@ -80,20 +83,21 @@ SPECTER2 semantic embeddings + Hungarian algorithm (matching threshold = 0.65).
 |---|---:|---:|---:|
 | dedup+cap20 | **0.625** | 0.501 | 0.832 |
 
-No overfitting: val/test F1 within 0.004.
+Validation and test F1 differ by 0.004.
 
 ### Comparison
 
-| Model | F1 | Recall | Precision | Gate |
-|---|---:|---:|---:|:---:|
-| GPT-4o-mini *(val-only baseline)* | 0.696* | 0.647* | 0.753* | ✓ |
-| **8B+9B Ensemble** (union, dedup+cap20) | **0.704** | **0.695** | 0.713 | ✓ |
-| **This model** (Qwen3.5-9B, dedup+cap20) | **0.621** | 0.498 | **0.827** | ✓ |
-| Qwen3-8B SFT (dedup+cap20) | 0.557 | 0.409 | 0.871 | ✗ |
+| Model | Split | F1 | Recall | Precision | Gate |
+|---|---|---:|---:|---:|:---:|
+| GPT-4o-mini *(contextual baseline)* | validation* | 0.696 | 0.647 | 0.753 | – |
+| **8B+9B Ensemble** (union, dedup+cap20) | test | **0.704** | **0.695** | 0.713 | ✓ |
+| **This model** (Qwen3.5-9B, dedup+cap20) | test | **0.621** | 0.498 | **0.827** | ✓ |
+| Qwen3-8B SFT (dedup+cap20) | test | 0.557 | 0.409 | 0.871 | ✗ |
 
-> \* GPT-4o-mini baseline evaluated on validation split only; test results pending.
+> *GPT-4o-mini was evaluated on a different validation split. Its metrics are
+> contextual only and are not directly comparable with the v3 test results.*
 >
-> **Precision note:** Qwen3-8B achieves higher raw precision (0.871) but lower F1 and recall,
+> **Precision note:** Qwen3-8B achieves higher postprocessed precision (0.871) but lower F1 and recall,
 > and fails the evaluation threshold. The 9B model offers the best single-model balance
 > of F1, recall, and precision. The 8B+9B union ensemble is recommended for highest F1.
 
@@ -139,6 +143,9 @@ pip install transformers peft bitsandbytes accelerate torch sentencepiece protob
 ```
 
 ### Inference
+
+**Availability:** The evaluated adapter is access-controlled. Replace
+`ADAPTER_REPO` below with an authorized Hub identifier or local adapter path.
 
 ```python
 import json, re, torch
@@ -243,7 +250,7 @@ concerns = review_paper(paper_text)
 
 Raw output typically contains 30–60 concerns, many overlapping.
 Apply **dedup+cap20** to remove near-duplicates and cap at 20 concerns per article.
-This improves F1 by +0.11 (0.514 → 0.625 on the validation set).
+On the test set, this changes F1 from 0.514 to 0.621 (+0.107).
 
 ```bash
 pip install sentence-transformers scikit-learn
@@ -297,7 +304,7 @@ for the full inference + evaluation pipeline including SPECTER2-based scoring.
 | Corpus | All non-figure concerns — peer-review-benchmark v3 train split |
 | Total articles | 4,734 |
 | Source breakdown | eLife 1,304 · F1000 1,933 · PLOS 1,255 · PeerJ 176 · Nature 66 |
-| Avg concerns / article | 14.1 |
+| Mean concerns per article | 14.1 |
 | Concern schema | `{text, category, severity}` objects |
 | Format | ShareGPT (system / human / assistant turns) |
 | Input truncation | 15,000-token budget · section priority: methods > results > intro > … |
@@ -356,7 +363,7 @@ Scientific concerns are matched semantically, not by exact string:
 
 ## Limitations
 
-- **Recall gap:** Captures ~50% of human reviewer concerns (vs ~65% for GPT-4o-mini)
+- **Recall gap:** Captures approximately 50% of human reviewer concerns on the v3 test split
 - **No figure analysis:** Explicitly trained to skip figure/image-related concerns
 - **Source bias:** Performance is weakest on Nature articles (n=66 in training)
 - **Context truncation:** Papers exceeding 15K tokens are truncated; later sections may be missed
@@ -370,7 +377,7 @@ Scientific concerns are matched semantically, not by exact string:
 ```bibtex
 @software{bioreview_training_2026,
   title  = {BioReview Training: QLoRA SFT Pipeline for Biomedical Peer-Review LLMs},
-  author = {Jang, Andrew},
+  author = {Kim, JangKeun},
   year   = {2026},
   url    = {https://github.com/jang1563/BioReview_Training}
 }
