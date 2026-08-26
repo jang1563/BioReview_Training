@@ -55,3 +55,6 @@ hpc_issue_report_*.md
 # IDE
 .vscode/
 .idea/
+
+# Internal handoff notes, not published
+CODEX_HANDOFF.md

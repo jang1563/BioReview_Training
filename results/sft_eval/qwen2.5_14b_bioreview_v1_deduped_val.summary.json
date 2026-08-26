@@ -1,0 +1,17 @@
+{
+  "generated_at_utc": "20260310T233937Z",
+  "model_dir": "/athena/cayuga_0003/scratch/users/jak4013/BioReview_Training/models/qwen2.5_14b_bioreview_v1",
+  "engine": "hf",
+  "split": "val",
+  "temperature": 0.1,
+  "max_new_tokens": 4096,
+  "source_variant_of": "qwen2.5_14b_bioreview_v1_val.summary.json",
+  "postprocess": "deduped output derived from base inference JSONL",
+  "eval_status": "not_run_for_this_variant",
+  "processed": 982,
+  "failed_parse": 10,
+  "total_concerns": 3425,
+  "total_time": 28961.939999999984,
+  "summary_refreshed_at_utc": "20260310T233937Z",
+  "summary_refreshed_from_jsonl": "qwen2.5_14b_bioreview_v1_deduped_val.jsonl"
+}

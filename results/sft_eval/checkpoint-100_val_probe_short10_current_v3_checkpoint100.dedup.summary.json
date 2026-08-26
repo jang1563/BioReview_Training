@@ -1,0 +1,21 @@
+{
+  "input": "results/sft_eval/checkpoint-100_val_probe_short10_current_v3_checkpoint100.jsonl",
+  "output": "results/sft_eval/checkpoint-100_val_probe_short10_current_v3_checkpoint100.dedup.jsonl",
+  "dedup_exact": true,
+  "cap": 0,
+  "rows": 10,
+  "total_concerns_before": 576,
+  "total_concerns_after": 113,
+  "total_removed": 463,
+  "eval_metrics": {
+    "recall_overall": 0.029411764705882353,
+    "precision_overall": 0.017699115044247787,
+    "f1_micro": 0.022099447513812154,
+    "recall_major": 0.045,
+    "n_articles": 10,
+    "n_human_concerns": 68,
+    "n_tool_concerns": 113,
+    "n_zero_recall_articles": 8,
+    "n_perfect_recall_articles": 0
+  }
+}

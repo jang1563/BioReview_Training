@@ -1,0 +1,21 @@
+{
+  "model_dir": "results/sft_eval/ensemble_union",
+  "strategy": "union",
+  "min_votes": 2,
+  "cluster_threshold": 0.98,
+  "models": [
+    "results/sft_eval/qwen3.5_9b_bioreview_v2_val.jsonl",
+    "results/sft_eval/qwen2.5_14b_bioreview_v2_val.jsonl"
+  ],
+  "labels": [
+    "9B-v2",
+    "14B-v2"
+  ],
+  "eval_metrics": {
+    "recall_overall": 0.4331876477753099,
+    "precision_overall": 0.8914774402831024,
+    "f1_micro": 0.5830560779208255,
+    "recall_major": 0.6343498854894065,
+    "n_articles": 982
+  }
+}

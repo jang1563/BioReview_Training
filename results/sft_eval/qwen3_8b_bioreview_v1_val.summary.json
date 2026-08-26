@@ -1,0 +1,23 @@
+{
+  "generated_at_utc": "20260308T045653Z",
+  "model_dir": "/athena/cayuga_0003/scratch/users/jak4013/BioReview_Training/models/qwen3_8b_bioreview_v1",
+  "engine": "hf",
+  "split": "val",
+  "temperature": 0.1,
+  "max_new_tokens": 4096,
+  "processed": 5,
+  "failed_parse": 1,
+  "total_concerns": 28,
+  "total_time": 542.1688416004181,
+  "eval_metrics": {
+    "recall_overall": 0.0014329727018700293,
+    "precision_overall": 0.7142857142857143,
+    "f1_micro": 0.002860207365033965,
+    "recall_major": 0.0017093395402967705,
+    "n_articles": 982,
+    "n_human_concerns": 13957,
+    "n_tool_concerns": 28,
+    "n_zero_recall_articles": 978,
+    "n_perfect_recall_articles": 1
+  }
+}

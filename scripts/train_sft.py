@@ -18,8 +18,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import platform
 import sys
 import time
+from importlib import metadata as importlib_metadata
 from pathlib import Path
 
 import yaml
@@ -39,9 +41,25 @@ CHAT_TEMPLATES = {
         "instruction_template": "<start_of_turn>user\n",
         "response_template": "<start_of_turn>model\n",
     },
+    "gemma4": {
+        "instruction_template": "<|turn>user\n",
+        "response_template": "<|turn>model\n",
+    },
 }
 
 SYSTEMLESS_TEMPLATE_FAMILIES = {"gemma"}
+RUNTIME_ENV_FILENAME = "runtime_env.json"
+RUNTIME_ENV_LAST_RUN_FILENAME = "runtime_env_last_run.json"
+RUNTIME_ENV_PACKAGES = (
+    "torch",
+    "transformers",
+    "trl",
+    "peft",
+    "accelerate",
+    "unsloth",
+    "xformers",
+    "bitsandbytes",
+)
 
 
 def detect_chat_template_family(tokenizer) -> str:
@@ -57,6 +75,8 @@ def detect_chat_template_family(tokenizer) -> str:
         return "chatml"
     if "\uff5cUser\uff5c" in formatted:
         return "deepseek"
+    if "<|turn>" in formatted:
+        return "gemma4"
     if "<start_of_turn>" in formatted:
         return "gemma"
     raise ValueError(
@@ -193,6 +213,146 @@ def load_jsonl_dataset(path: Path) -> list[dict]:
     return rows
 
 
+def get_package_version(package_name: str) -> str | None:
+    """Best-effort package version lookup without importing the package."""
+    try:
+        return importlib_metadata.version(package_name)
+    except importlib_metadata.PackageNotFoundError:
+        return None
+
+
+def collect_runtime_metadata(backend: str) -> dict:
+    """Capture runtime metadata so resumed runs can verify compatibility."""
+    return {
+        "captured_at_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "backend": backend,
+        "python_executable": sys.executable,
+        "python_version": platform.python_version(),
+        "platform": platform.platform(),
+        "packages": {
+            package_name: get_package_version(package_name)
+            for package_name in RUNTIME_ENV_PACKAGES
+        },
+    }
+
+
+def write_json(path: Path, payload: dict) -> None:
+    """Write a JSON file with stable formatting."""
+    path.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
+def load_runtime_metadata(path: Path) -> dict | None:
+    """Load runtime metadata if present and valid."""
+    if not path.is_file():
+        return None
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def find_runtime_metadata(
+    output_dir: Path, resume_from: Path | None
+) -> tuple[Path | None, dict | None]:
+    """Find previously saved runtime metadata for the active output/checkpoint."""
+    candidates: list[Path] = []
+    if resume_from is not None:
+        candidates.extend(
+            [
+                resume_from / RUNTIME_ENV_FILENAME,
+                resume_from.parent / RUNTIME_ENV_FILENAME,
+            ]
+        )
+    candidates.append(output_dir / RUNTIME_ENV_FILENAME)
+
+    seen: set[str] = set()
+    for candidate in candidates:
+        key = str(candidate)
+        if key in seen:
+            continue
+        seen.add(key)
+        payload = load_runtime_metadata(candidate)
+        if payload is not None:
+            return candidate, payload
+    return None, None
+
+
+def compare_runtime_metadata(saved: dict, current: dict) -> list[str]:
+    """Return human-readable mismatches between saved and current runtime metadata."""
+    mismatches: list[str] = []
+    for field in ("backend", "python_version"):
+        saved_value = saved.get(field)
+        current_value = current.get(field)
+        if saved_value != current_value:
+            mismatches.append(
+                f"{field}: saved={saved_value!r}, current={current_value!r}"
+            )
+
+    saved_packages = saved.get("packages") or {}
+    current_packages = current.get("packages") or {}
+    for package_name in sorted(set(saved_packages) | set(current_packages)):
+        saved_value = saved_packages.get(package_name)
+        current_value = current_packages.get(package_name)
+        if saved_value != current_value:
+            mismatches.append(
+                f"package {package_name}: saved={saved_value!r}, current={current_value!r}"
+            )
+    return mismatches
+
+
+def prepare_runtime_metadata(
+    output_dir: Path,
+    resume_from: Path | None,
+    current_runtime: dict,
+    allow_mismatch: bool,
+) -> None:
+    """Persist runtime metadata and block risky cross-version resumes by default."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    write_json(output_dir / RUNTIME_ENV_LAST_RUN_FILENAME, current_runtime)
+
+    saved_path, saved_runtime = find_runtime_metadata(output_dir, resume_from)
+    if resume_from is not None:
+        if saved_runtime is None:
+            print(
+                "WARNING: no runtime metadata found for resumed checkpoint; "
+                "cannot verify package compatibility."
+            )
+        else:
+            mismatches = compare_runtime_metadata(saved_runtime, current_runtime)
+            if mismatches:
+                mismatch_block = "\n".join(f"  - {item}" for item in mismatches)
+                message = (
+                    "Resume environment mismatch detected.\n"
+                    f"Saved runtime metadata: {saved_path}\n"
+                    "Mismatches:\n"
+                    f"{mismatch_block}\n"
+                    "Cross-version resumes can silently corrupt training."
+                )
+                if allow_mismatch:
+                    print(
+                        "WARNING: "
+                        + message
+                        + "\nProceeding because --allow-resume-env-mismatch was set."
+                    )
+                else:
+                    print(
+                        "ERROR: "
+                        + message
+                        + "\nRefusing to resume. Re-run with "
+                        "--allow-resume-env-mismatch only if you truly intend to ignore "
+                        "this guard.",
+                        file=sys.stderr,
+                    )
+                    raise SystemExit(1)
+
+        runtime_env_path = output_dir / RUNTIME_ENV_FILENAME
+        if not runtime_env_path.exists():
+            write_json(runtime_env_path, current_runtime)
+        return
+
+    write_json(output_dir / RUNTIME_ENV_FILENAME, current_runtime)
+
+
 def sharegpt_to_messages(conversations: list[dict]) -> list[dict]:
     """Convert ShareGPT conversations to OpenAI-style messages."""
     return [
@@ -232,6 +392,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-response-only",
         action="store_true",
         help="Train on full sequence instead of response-only loss masking.",
+    )
+    p.add_argument(
+        "--allow-resume-env-mismatch",
+        action="store_true",
+        help="Allow resume even if saved runtime metadata disagrees with the current environment.",
     )
     return p
 
@@ -346,7 +511,16 @@ def main() -> None:
     except ImportError:
         pass
 
-    print(f"backend: {'unsloth' if use_unsloth else 'peft+bitsandbytes'}")
+    backend = "unsloth" if use_unsloth else "peft+bitsandbytes"
+    print(f"backend: {backend}")
+
+    current_runtime = collect_runtime_metadata(backend)
+    prepare_runtime_metadata(
+        output_dir=output_dir,
+        resume_from=args.resume,
+        current_runtime=current_runtime,
+        allow_mismatch=args.allow_resume_env_mismatch,
+    )
 
     if use_unsloth:
         model, tokenizer = load_model_unsloth(mcfg, lcfg, tcfg["seed"])
@@ -609,7 +783,7 @@ def main() -> None:
     # Save training summary
     summary = {
         "model": mcfg["name"],
-        "backend": "unsloth" if use_unsloth else "peft+bitsandbytes",
+        "backend": backend,
         "train_articles": len(raw_train),
         "val_articles": len(raw_val),
         "epochs": tcfg["num_train_epochs"],
@@ -623,6 +797,7 @@ def main() -> None:
     }
     summary_path = output_dir / "training_summary.json"
     summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    write_json(output_dir / RUNTIME_ENV_LAST_RUN_FILENAME, current_runtime)
 
     print(f"\nModel saved to:   {output_dir}")
     print(f"Config saved to:  {config_save_path}")

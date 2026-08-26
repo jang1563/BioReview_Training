@@ -40,6 +40,9 @@ MAX_ARTICLES="${MAX_ARTICLES:-0}"
 EVALUATE="${EVALUATE:-true}"
 TAG="${TAG:-}"
 RESUME="${RESUME:-false}"
+ENGINE="${ENGINE:-}"   # "" = auto (tries unsloth→hf), "hf" = force HuggingFace, "unsloth", "vllm" (merged full model only)
+MAX_SEQ_LENGTH="${MAX_SEQ_LENGTH:-}"  # optional override for scripts/run_sft_inference.py
+MAX_NEW_TOKENS="${MAX_NEW_TOKENS:-}"  # optional override for scripts/run_sft_inference.py
 
 echo "============================================================"
 echo "BioReview SFT Inference — Cayuga"
@@ -52,6 +55,9 @@ echo "Max articles: ${MAX_ARTICLES} (0=all)"
 echo "Tag:          ${TAG:-'(none)'}"
 echo "Resume:       ${RESUME}"
 echo "Evaluate:     ${EVALUATE}"
+echo "Engine:       ${ENGINE:-auto}"
+echo "Max seq len:  ${MAX_SEQ_LENGTH:-16384(default)}"
+echo "Max new toks: ${MAX_NEW_TOKENS:-4096(default)}"
 echo "Start time:   $(date)"
 echo "============================================================"
 
@@ -108,7 +114,7 @@ if [ "${EVALUATE}" = "true" ]; then
 fi
 
 # ── Build inference command ────────────────────────────────────────────────
-CMD="python scripts/run_sft_inference.py"
+CMD="python -u scripts/run_sft_inference.py"
 CMD="${CMD} --model-dir ${MODEL_DIR}"
 CMD="${CMD} --split ${SPLIT}"
 CMD="${CMD} --splits-dir ${SPLITS_DIR}"
@@ -127,6 +133,18 @@ fi
 
 if [ "${EVALUATE}" = "true" ]; then
     CMD="${CMD} --evaluate"
+fi
+
+if [ -n "${ENGINE}" ]; then
+    CMD="${CMD} --engine ${ENGINE}"
+fi
+
+if [ -n "${MAX_SEQ_LENGTH}" ]; then
+    CMD="${CMD} --max-seq-length ${MAX_SEQ_LENGTH}"
+fi
+
+if [ -n "${MAX_NEW_TOKENS}" ]; then
+    CMD="${CMD} --max-new-tokens ${MAX_NEW_TOKENS}"
 fi
 
 echo ""

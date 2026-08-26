@@ -1,0 +1,22 @@
+{
+  "generated_at_utc": "20260311T113659Z",
+  "model_dir": "/athena/cayuga_0003/scratch/users/jak4013/BioReview_Training/models/deepseek_r1_14b_bioreview_v1",
+  "engine": "hf",
+  "split": "val",
+  "temperature": 0.1,
+  "max_new_tokens": 4096,
+  "processed": 982,
+  "failed_parse": 981,
+  "total_concerns": 7,
+  "total_time": 81698.95442819595,
+  "eval_metrics": {
+    "recall_overall": 0.28043275775596477,
+    "precision_overall": 0.9363636363636364,
+    "f1_micro": 0.43160390362242934,
+    "recall_major": 0.44973675762744425,
+    "n_articles": 982,
+    "n_human_concerns": 13957,
+    "n_tool_concerns": 4180,
+    "eval_method": "specter2"
+  }
+}

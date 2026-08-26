@@ -1,0 +1,24 @@
+{
+  "model_dir": "results/sft_eval/ensemble_vote2",
+  "strategy": "vote",
+  "min_votes": 2,
+  "cluster_threshold": 0.7,
+  "models": [
+    "results/sft_eval/qwen2.5_14b_bioreview_v1_val.jsonl",
+    "results/sft_eval/qwen3.5_9b_bioreview_v1_val.jsonl"
+  ],
+  "labels": [
+    "Qwen2.5-14B",
+    "Qwen3.5-9B"
+  ],
+  "eval_metrics": {
+    "recall_overall": 0.04735974779680447,
+    "precision_overall": 0.9984894259818731,
+    "f1_micro": 0.09043026198782406,
+    "recall_major": 0.09003804907792391,
+    "n_articles": 982,
+    "n_human_concerns": 13957,
+    "n_tool_concerns": 662,
+    "eval_method": "specter2"
+  }
+}

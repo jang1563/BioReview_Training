@@ -119,6 +119,33 @@ def _progressive_decode(fragment: str):
     return None
 
 
+def _plain_text_concern_fallback(text: str):
+    """Recover concern texts when a model ignores the requested JSON format."""
+    chunks = re.split(r"\n\s*\n|(?:^|\n)\s*(?:[-*]|\d+[.)])\s+", text.strip())
+    structured: list[dict] = []
+    texts: list[str] = []
+    seen: set[str] = set()
+
+    for chunk in chunks:
+        concern = re.sub(r"\s+", " ", chunk).strip(" \t\r\n-*:;")
+        if len(concern.split()) < 6:
+            continue
+        lowered = concern.lower()
+        if lowered.startswith(("here are", "sure", "output", "json")):
+            continue
+        if concern in seen:
+            continue
+        seen.add(concern)
+        structured.append(
+            {"text": concern, "category": "unknown", "severity": "unknown"}
+        )
+        texts.append(concern)
+
+    if texts:
+        return structured, texts
+    return None
+
+
 def parse_model_output(text: str) -> tuple[list[dict], list[str]]:
     """Parse model output into (structured_concerns, text_concerns).
 
@@ -170,6 +197,12 @@ def parse_model_output(text: str) -> tuple[list[dict], list[str]]:
         if result is not None:
             return result
 
+    # 6) Plain paragraphs or bullets. Some adapters learn the concern content
+    # but not the exact JSON wrapper; keep the text so evaluation can proceed.
+    result = _plain_text_concern_fallback(text)
+    if result is not None:
+        return result
+
     return [], []
 
 
@@ -178,17 +211,326 @@ def parse_model_output(text: str) -> tuple[list[dict], list[str]]:
 # ---------------------------------------------------------------------------
 
 
+def is_adapter_dir(model_dir: Path) -> bool:
+    """Return True when `model_dir` looks like a LoRA adapter directory."""
+    return (model_dir / "adapter_config.json").exists()
+
+
+def has_model_weights(model_dir: Path) -> bool:
+    """Return True when a full model directory contains serialized weights."""
+    weight_patterns = (
+        "*.safetensors",
+        "pytorch_model*.bin",
+        "model.safetensors.index.json",
+        "pytorch_model.bin.index.json",
+    )
+    return any(any(model_dir.glob(pattern)) for pattern in weight_patterns)
+
+
+def _patch_unsloth_gemma2_single_batch_mask_bug() -> bool:
+    """Patch Unsloth Gemma-2 generation to normalize 2D masks for batch size 1."""
+    try:
+        import unsloth.models.gemma2 as gemma2_mod
+    except Exception:
+        return False
+
+    if getattr(gemma2_mod, "_bioreview_single_batch_mask_patch", False):
+        return False
+
+    original = gemma2_mod.Gemma2Attention_fast_forward_inference
+
+    def patched(
+        self,
+        hidden_states,
+        past_key_value,
+        position_ids,
+        do_prefill=False,
+        attention_mask=None,
+        use_sliding_window=False,
+        **kwargs,
+    ):
+        if (
+            attention_mask is not None
+            and isinstance(attention_mask, gemma2_mod.torch.Tensor)
+            and attention_mask.dim() == 2
+        ):
+            bsz, q_len, _ = hidden_states.shape
+            seq_len = past_key_value[0].shape[-2]
+            sliding_window = self.config.sliding_window if use_sliding_window else None
+            attention_mask = gemma2_mod._prepare_4d_causal_attention_mask_for_sdpa(
+                attention_mask,
+                (bsz, q_len),
+                hidden_states,
+                seq_len,
+                sliding_window=sliding_window,
+            )
+
+        return original(
+            self,
+            hidden_states=hidden_states,
+            past_key_value=past_key_value,
+            position_ids=position_ids,
+            do_prefill=do_prefill,
+            attention_mask=attention_mask,
+            use_sliding_window=use_sliding_window,
+            **kwargs,
+        )
+
+    gemma2_mod.Gemma2Attention_fast_forward_inference = patched
+    gemma2_mod._bioreview_original_gemma2_attention_fast_forward_inference = original
+    gemma2_mod._bioreview_single_batch_mask_patch = True
+    return True
+
+
+def compute_max_input_tokens(max_seq_length: int, max_new_tokens: int) -> int:
+    """Reserve room for generation inside the configured context window."""
+    if max_new_tokens <= 0:
+        return max_seq_length
+    return max(1, max_seq_length - max_new_tokens)
+
+
+def find_training_config_path(model_dir: Path) -> Path | None:
+    """Find training_config.yaml for adapter roots or nested checkpoint dirs."""
+    candidates = [
+        model_dir / "training_config.yaml",
+        model_dir.parent / "training_config.yaml",
+        model_dir.parent.parent / "training_config.yaml",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def infer_gemma2_training_prefill_cap(
+    model_dir: Path, training_max_seq_length
+):
+    """Infer a safe Gemma-2 prefill cap from config or adapter naming."""
+    if training_max_seq_length:
+        return int(training_max_seq_length), "training_config"
+
+    model_path = str(model_dir).lower()
+    if "gemma2" not in model_path:
+        return None, None
+    if "8k" in model_path:
+        return 8192, "model_dir_name"
+    if "4k" in model_path:
+        return 4096, "model_dir_name"
+    return None, None
+
+
+def maybe_cap_gemma2_unsloth_input_tokens(
+    model_dir: Path,
+    engine: str,
+    requested_max_input_tokens: int,
+    training_max_seq_length,
+) -> tuple[int, str | None]:
+    """Cap Gemma-2 Unsloth prompt length to the trained prefill length."""
+    if engine != "unsloth":
+        return requested_max_input_tokens, None
+    if "gemma2" not in str(model_dir).lower():
+        return requested_max_input_tokens, None
+
+    inferred_cap, cap_source = infer_gemma2_training_prefill_cap(
+        model_dir, training_max_seq_length
+    )
+    if not inferred_cap:
+        return requested_max_input_tokens, None
+    return min(requested_max_input_tokens, inferred_cap), cap_source
+
+
+def maybe_cap_gemma2_hf_context_window(
+    model_dir: Path,
+    engine: str,
+    requested_max_seq_length: int,
+    training_max_seq_length,
+) -> tuple[int, str | None]:
+    """Cap Gemma-2 HF generation window to the model's native context length."""
+    if engine != "hf":
+        return requested_max_seq_length, None
+
+    inferred_cap, cap_source = infer_gemma2_training_prefill_cap(
+        model_dir, training_max_seq_length
+    )
+    if not inferred_cap:
+        return requested_max_seq_length, None
+    return min(requested_max_seq_length, inferred_cap), cap_source
+
+
 def load_model_unsloth(model_dir: Path, max_seq_length: int, load_in_4bit: bool):
-    """Load model with Unsloth (optimized inference)."""
+    """Load model with Unsloth (optimized inference).
+
+    If ``from_pretrained`` fails on the adapter (e.g. PEFT doesn't support the
+    target module type), fall back to manual adapter loading: base model →
+    ``get_peft_model`` → load adapter weights.
+    """
     from unsloth import FastLanguageModel
 
+    if _patch_unsloth_gemma2_single_batch_mask_bug():
+        print("  Applied Unsloth Gemma-2 single-batch mask patch.")
+
+    adapter_config_path = model_dir / "adapter_config.json"
+
+    try:
+        model, tokenizer = FastLanguageModel.from_pretrained(
+            model_name=str(model_dir),
+            max_seq_length=max_seq_length,
+            load_in_4bit=load_in_4bit,
+        )
+    except Exception as exc:
+        if not adapter_config_path.exists():
+            raise
+        print(f"  Unsloth from_pretrained failed ({exc}), trying manual adapter load...")
+        model, tokenizer = _load_adapter_manual(
+            model_dir, adapter_config_path, max_seq_length, load_in_4bit,
+        )
+
+    FastLanguageModel.for_inference(model)
+    return model, tokenizer
+
+
+def _load_adapter_manual(
+    model_dir: Path,
+    adapter_config_path: Path,
+    max_seq_length: int,
+    load_in_4bit: bool,
+):
+    """Load adapter by manually applying LoRA and loading weights.
+
+    Bypasses PEFT ``from_pretrained`` which may not support custom layer types
+    (e.g. ``Gemma4ClippableLinear``).
+    """
+    import safetensors.torch
+    from unsloth import FastLanguageModel
+
+    with adapter_config_path.open() as f:
+        acfg = json.load(f)
+
+    base_path = acfg["base_model_name_or_path"]
+    print(f"  Manual adapter load — base model: {base_path}")
+
     model, tokenizer = FastLanguageModel.from_pretrained(
-        model_name=str(model_dir),
+        model_name=base_path,
         max_seq_length=max_seq_length,
         load_in_4bit=load_in_4bit,
     )
-    FastLanguageModel.for_inference(model)
+    model = FastLanguageModel.get_peft_model(
+        model,
+        r=acfg["r"],
+        lora_alpha=acfg["lora_alpha"],
+        lora_dropout=acfg.get("lora_dropout", 0.0),
+        target_modules=acfg["target_modules"],
+        bias=acfg.get("bias", "none"),
+        use_rslora=acfg.get("use_rslora", False),
+    )
+
+    # Load adapter weights with key remapping (saved vs model key formats may differ)
+    adapter_path = model_dir / "adapter_model.safetensors"
+    adapter_sd = safetensors.torch.load_file(str(adapter_path))
+    model_sd = dict(model.named_parameters())
+
+    loaded, skipped = 0, 0
+    for ak, av in adapter_sd.items():
+        matched = False
+        # Try direct match
+        if ak in model_sd and model_sd[ak].shape == av.shape:
+            model_sd[ak].data.copy_(av)
+            loaded += 1
+            matched = True
+        if not matched:
+            # Try adding 'default.' (PEFT adapter naming convention)
+            parts = ak.rsplit(".", 2)
+            if len(parts) >= 3 and parts[-2] in ("lora_A", "lora_B"):
+                remap = ".".join(parts[:-2] + [parts[-2], "default", parts[-1]])
+                if remap in model_sd and model_sd[remap].shape == av.shape:
+                    model_sd[remap].data.copy_(av)
+                    loaded += 1
+                    matched = True
+        if not matched:
+            skipped += 1
+    print(f"  Adapter weights: {loaded} loaded, {skipped} skipped out of {len(adapter_sd)}")
+    if loaded == 0:
+        raise RuntimeError("No adapter weights matched — check key naming")
+
     return model, tokenizer
+
+
+def _is_gemma4_adapter(adapter_cfg: dict) -> bool:
+    """Return True for Gemma4 adapter configs saved by Unsloth/PEFT."""
+    values = [
+        adapter_cfg.get("base_model_name_or_path", ""),
+        adapter_cfg.get("base_model_class", ""),
+    ]
+    auto_mapping = adapter_cfg.get("auto_mapping")
+    if isinstance(auto_mapping, dict):
+        values.extend(str(v) for v in auto_mapping.values())
+    haystack = " ".join(str(v).lower() for v in values)
+    return "gemma4" in haystack or "gemma-4" in haystack
+
+
+def _load_hf_language_only_lora_adapter(model, model_dir: Path, adapter_cfg: dict):
+    """Apply a Gemma4 text-only LoRA adapter with standard HF/PEFT.
+
+    Gemma4 adapters trained through Unsloth may include zero-effect vision tower
+    LoRA tensors. PEFT's default loader tries to inject those into
+    ``Gemma4ClippableLinear`` wrappers and fails before text inference can run.
+    For BioReview's text-only generation, load only language_model LoRA tensors.
+    """
+    import safetensors.torch
+    from peft import LoraConfig, get_peft_model
+
+    target_regex = (
+        r".*language_model.*\."
+        r"(q_proj|k_proj|v_proj|o_proj|gate_proj|up_proj|down_proj)$"
+    )
+    lora_config = LoraConfig(
+        r=adapter_cfg["r"],
+        lora_alpha=adapter_cfg["lora_alpha"],
+        target_modules=target_regex,
+        lora_dropout=adapter_cfg.get("lora_dropout", 0.0),
+        bias=adapter_cfg.get("bias", "none"),
+        task_type=adapter_cfg.get("task_type", "CAUSAL_LM"),
+        use_rslora=adapter_cfg.get("use_rslora", False),
+    )
+
+    model = get_peft_model(model, lora_config, autocast_adapter_dtype=False)
+
+    adapter_path = model_dir / "adapter_model.safetensors"
+    adapter_sd = safetensors.torch.load_file(str(adapter_path))
+    model_sd = dict(model.named_parameters())
+
+    loaded, skipped, filtered = 0, 0, 0
+    for ak, av in adapter_sd.items():
+        if ".language_model." not in ak:
+            filtered += 1
+            continue
+
+        candidates = [ak]
+        parts = ak.rsplit(".", 2)
+        if len(parts) >= 3 and parts[-2] in ("lora_A", "lora_B"):
+            candidates.append(".".join(parts[:-2] + [parts[-2], "default", parts[-1]]))
+
+        for mk in candidates:
+            param = model_sd.get(mk)
+            if param is not None and param.shape == av.shape:
+                param.data.copy_(av)
+                loaded += 1
+                break
+        else:
+            skipped += 1
+
+    print(
+        "  Gemma4 language-only adapter weights: "
+        f"{loaded} loaded, {skipped} skipped, {filtered} non-language skipped"
+    )
+    if loaded == 0:
+        raise RuntimeError("No Gemma4 language LoRA weights matched the HF model")
+    if skipped:
+        raise RuntimeError(
+            f"{skipped} Gemma4 language LoRA weights did not match the HF model"
+        )
+
+    return model
 
 
 def load_model_hf(model_dir: Path, load_in_4bit: bool):
@@ -231,7 +573,11 @@ def load_model_hf(model_dir: Path, load_in_4bit: bool):
             )
 
         model = AutoModelForCausalLM.from_pretrained(base_model_name, **load_kwargs)
-        model = PeftModel.from_pretrained(model, str(model_dir))
+        if _is_gemma4_adapter(adapter_cfg):
+            print("  Gemma4 adapter detected: using HF language-only manual LoRA load.")
+            model = _load_hf_language_only_lora_adapter(model, model_dir, adapter_cfg)
+        else:
+            model = PeftModel.from_pretrained(model, str(model_dir))
     else:
         # Merged full model
         tokenizer = AutoTokenizer.from_pretrained(str(model_dir))
@@ -267,21 +613,82 @@ def _unwrap_processor(tokenizer_or_processor):
     return tokenizer_or_processor, tokenizer_or_processor  # same object for both
 
 
-def load_model(model_dir: Path, max_seq_length: int, load_in_4bit: bool):
+def set_truncation_side(tokenizer, side: str) -> None:
+    """Apply truncation side consistently to tokenizer wrappers and base tokenizers."""
+    if side not in {"left", "right"}:
+        raise ValueError(f"Unsupported truncation side: {side}")
+
+    text_tokenizer = getattr(tokenizer, "tokenizer", tokenizer)
+    for candidate in (tokenizer, text_tokenizer):
+        if hasattr(candidate, "truncation_side"):
+            candidate.truncation_side = side
+
+
+def load_model_vllm(model_dir: Path, max_seq_length: int):
+    """Load model with vLLM for fast inference (requires merged weights)."""
+    from vllm import LLM
+    from transformers import AutoTokenizer
+
+    if is_adapter_dir(model_dir):
+        raise ValueError(
+            "vLLM requires a merged full model directory, not a LoRA adapter. "
+            "Merge the adapter first (for example with scripts/merge_lora_adapter.py)."
+        )
+    if not has_model_weights(model_dir):
+        raise ValueError(
+            "vLLM model directory is missing model weight files. "
+            f"{model_dir} looks incomplete; rerun scripts/merge_lora_adapter.py."
+        )
+
+    model = LLM(
+        model=str(model_dir),
+        max_model_len=max_seq_length,
+        dtype="bfloat16",
+        gpu_memory_utilization=0.90,
+        trust_remote_code=True,
+    )
+    tokenizer = AutoTokenizer.from_pretrained(str(model_dir))
+    return model, tokenizer
+
+
+def load_model(
+    model_dir: Path,
+    max_seq_length: int,
+    load_in_4bit: bool,
+    engine_pref: str = "auto",
+):
     """Load model, preferring Unsloth if available.
 
     Returns (model, tokenizer, text_tokenizer, engine_name).
     tokenizer: full processor/tokenizer (for apply_chat_template)
     text_tokenizer: text-only tokenizer (for encoding prompts)
+
+    engine_pref: "auto" tries unsloth→hf, "vllm"/"unsloth"/"hf" forces that engine.
     """
-    try:
-        model, tokenizer = load_model_unsloth(model_dir, max_seq_length, load_in_4bit)
+    if engine_pref == "vllm":
+        model, tokenizer = load_model_vllm(model_dir, max_seq_length)
         processor, text_tok = _unwrap_processor(tokenizer)
-        if text_tok is not processor:
-            print(f"  VL model detected: using inner text tokenizer for encoding")
-        return model, processor, text_tok, "unsloth"
-    except ImportError:
-        pass
+        return model, processor, text_tok, "vllm"
+
+    if engine_pref in ("auto", "unsloth"):
+        try:
+            model, tokenizer = load_model_unsloth(
+                model_dir, max_seq_length, load_in_4bit
+            )
+            processor, text_tok = _unwrap_processor(tokenizer)
+            if text_tok is not processor:
+                print(f"  VL model detected: using inner text tokenizer for encoding")
+            return model, processor, text_tok, "unsloth"
+        except ImportError:
+            if engine_pref == "unsloth":
+                raise
+        except Exception as exc:
+            if engine_pref == "unsloth":
+                raise
+            print(
+                f"  Unsloth load failed ({type(exc).__name__}: {exc}), "
+                "falling back to HuggingFace..."
+            )
 
     model, tokenizer = load_model_hf(model_dir, load_in_4bit)
     processor, text_tok = _unwrap_processor(tokenizer)
@@ -306,6 +713,8 @@ def detect_chat_template_family(tokenizer) -> str:
         return "chatml"
     if "<｜User｜>" in formatted:
         return "deepseek"
+    if "<|turn>" in formatted:
+        return "gemma4"
     if "<start_of_turn>" in formatted:
         return "gemma"
     return "unknown"
@@ -442,7 +851,9 @@ def generate_one(
     temperature: float,
     repetition_penalty: float,
     max_seq_length: int = 16384,
+    max_input_tokens=None,
     text_tokenizer=None,
+    log_prefix: str | None = None,
 ) -> str:
     """Generate response for a single prompt.
 
@@ -453,16 +864,31 @@ def generate_one(
     import torch
 
     enc = text_tokenizer if text_tokenizer is not None else tokenizer
+    max_input_tokens = (
+        max_input_tokens
+        if max_input_tokens is not None
+        else compute_max_input_tokens(max_seq_length, max_new_tokens)
+    )
     inputs = enc(
-        prompt, return_tensors="pt", truncation=True, max_length=max_seq_length
+        prompt, return_tensors="pt", truncation=True, max_length=max_input_tokens
     )
     input_ids = inputs["input_ids"].to(model.device)
     attention_mask = inputs["attention_mask"].to(model.device)
+    allowed_new_tokens = max(1, max_seq_length - input_ids.shape[-1])
+    final_max_new_tokens = min(max_new_tokens, allowed_new_tokens)
+
+    if log_prefix:
+        print(
+            f"{log_prefix}: prompt_tokens={input_ids.shape[-1]}, "
+            f"max_input_tokens={max_input_tokens}, "
+            f"max_new_tokens={final_max_new_tokens}, "
+            f"context_used={input_ids.shape[-1] + final_max_new_tokens}/{max_seq_length}"
+        )
 
     gen_kwargs: dict = {
         "input_ids": input_ids,
         "attention_mask": attention_mask,
-        "max_new_tokens": max_new_tokens,
+        "max_new_tokens": final_max_new_tokens,
         "pad_token_id": (
             enc.pad_token_id
             if enc.pad_token_id is not None
@@ -484,6 +910,50 @@ def generate_one(
     # Decode only generated tokens
     generated_ids = outputs[0][input_ids.shape[-1] :]
     return enc.decode(generated_ids, skip_special_tokens=True)
+
+
+def generate_one_vllm(
+    model,
+    tokenizer,
+    prompt: str,
+    max_new_tokens: int,
+    temperature: float,
+    repetition_penalty: float,
+    max_seq_length: int,
+    max_input_tokens=None,
+    log_prefix: str | None = None,
+) -> str:
+    """Generate response using vLLM engine."""
+    from vllm import SamplingParams
+
+    max_input_tokens = (
+        max_input_tokens
+        if max_input_tokens is not None
+        else compute_max_input_tokens(max_seq_length, max_new_tokens)
+    )
+    encoded = tokenizer(
+        prompt, return_tensors="pt", truncation=True, max_length=max_input_tokens
+    )
+    prompt = tokenizer.decode(encoded["input_ids"][0], skip_special_tokens=False)
+    allowed_new_tokens = max(1, max_seq_length - encoded["input_ids"].shape[-1])
+    final_max_new_tokens = min(max_new_tokens, allowed_new_tokens)
+
+    if log_prefix:
+        print(
+            f"{log_prefix}: prompt_tokens={encoded['input_ids'].shape[-1]}, "
+            f"max_input_tokens={max_input_tokens}, "
+            f"max_new_tokens={final_max_new_tokens}, "
+            f"context_used={encoded['input_ids'].shape[-1] + final_max_new_tokens}/{max_seq_length}"
+        )
+
+    params = SamplingParams(
+        max_tokens=final_max_new_tokens,
+        temperature=temperature if temperature > 0 else 0,
+        repetition_penalty=repetition_penalty,
+        top_p=0.9 if temperature > 0 else 1.0,
+    )
+    outputs = model.generate([prompt], params, use_tqdm=False)
+    return outputs[0].outputs[0].text
 
 
 # ---------------------------------------------------------------------------
@@ -677,6 +1147,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Disable 4-bit quantization (load in full/half precision).",
     )
     p.add_argument(
+        "--engine",
+        choices=["auto", "vllm", "unsloth", "hf"],
+        default="auto",
+        help="Inference engine: auto (unsloth→hf), vllm (fast, needs merged model).",
+    )
+    p.add_argument(
         "--evaluate",
         action="store_true",
         help="Run evaluation after generation.",
@@ -751,6 +1227,7 @@ def main() -> None:
     print(f"max_articles:   {args.max_articles if args.max_articles > 0 else '(all)'}")
     print(f"temperature:    {args.temperature}")
     print(f"max_new_tokens: {args.max_new_tokens}")
+    print(f"requested_max_seq_length: {args.max_seq_length}")
     print(f"load_in_4bit:   {load_in_4bit}")
     print(f"evaluate:       {args.evaluate}")
     if args.tag:
@@ -768,7 +1245,9 @@ def main() -> None:
     # ── Load model ──────────────────────────────────────────────
     print("Loading model...")
     t0 = time.time()
-    model, tokenizer, text_tokenizer, engine = load_model(model_dir, args.max_seq_length, load_in_4bit)
+    model, tokenizer, text_tokenizer, engine = load_model(
+        model_dir, args.max_seq_length, load_in_4bit, engine_pref=args.engine
+    )
     print(f"Model loaded in {time.time() - t0:.1f}s (engine={engine})")
 
     # Ensure pad token
@@ -778,17 +1257,62 @@ def main() -> None:
     # ── Read enable_thinking from training config ──────────────
     enable_thinking = True
     template_family = None
-    training_config_path = model_dir / "training_config.yaml"
-    if training_config_path.exists():
+    training_max_seq_length = None
+    truncation_side = getattr(text_tokenizer, "truncation_side", "right")
+    training_config_path = find_training_config_path(model_dir)
+    if training_config_path is not None:
         with training_config_path.open(encoding="utf-8") as f:
             tcfg = yaml.safe_load(f)
         enable_thinking = tcfg.get("model", {}).get("enable_thinking", True)
         template_family = tcfg.get("model", {}).get("chat_template")
+        training_max_seq_length = tcfg.get("model", {}).get("max_seq_length")
+        truncation_side = tcfg.get("model", {}).get("truncation_side", truncation_side)
         if not enable_thinking:
             print(f"enable_thinking: False (from training config)")
+    set_truncation_side(tokenizer, truncation_side)
+    print(f"truncation_side: {truncation_side}")
     if not template_family:
         template_family = detect_chat_template_family(tokenizer)
     print(f"chat template: {template_family}")
+
+    effective_max_seq_length, max_seq_length_cap_source = (
+        maybe_cap_gemma2_hf_context_window(
+            model_dir=model_dir,
+            engine=engine,
+            requested_max_seq_length=args.max_seq_length,
+            training_max_seq_length=training_max_seq_length,
+        )
+    )
+    print(f"effective_max_seq_length: {effective_max_seq_length}")
+    if effective_max_seq_length != args.max_seq_length:
+        print(
+            "max_seq_length capped for Gemma-2 HF stability: "
+            f"{effective_max_seq_length}"
+        )
+        if max_seq_length_cap_source:
+            print(f"max_seq_length cap source: {max_seq_length_cap_source}")
+
+    requested_max_input_tokens = compute_max_input_tokens(
+        effective_max_seq_length, args.max_new_tokens
+    )
+    print(f"requested_max_input_tokens: {requested_max_input_tokens}")
+
+    effective_max_input_tokens, max_input_cap_source = (
+        maybe_cap_gemma2_unsloth_input_tokens(
+        model_dir=model_dir,
+        engine=engine,
+        requested_max_input_tokens=requested_max_input_tokens,
+        training_max_seq_length=training_max_seq_length,
+    )
+    )
+    print(f"effective_max_input_tokens: {effective_max_input_tokens}")
+    if effective_max_input_tokens != requested_max_input_tokens:
+        print(
+            "max_input_tokens capped for Gemma-2 Unsloth stability: "
+            f"{effective_max_input_tokens}"
+        )
+        if max_input_cap_source:
+            print(f"max_input_tokens cap source: {max_input_cap_source}")
 
     # ── Load system prompt and token counter ────────────────────
     system_prompt = get_system_prompt(project_root)
@@ -884,16 +1408,31 @@ def main() -> None:
                     enable_thinking=enable_thinking,
                 )
 
-                raw_output = generate_one(
-                    model=model,
-                    tokenizer=tokenizer,
-                    prompt=prompt,
-                    max_new_tokens=args.max_new_tokens,
-                    temperature=args.temperature,
-                    repetition_penalty=args.repetition_penalty,
-                    max_seq_length=args.max_seq_length,
-                    text_tokenizer=text_tokenizer,
-                )
+                if engine == "vllm":
+                    raw_output = generate_one_vllm(
+                        model=model,
+                        tokenizer=text_tokenizer,
+                        prompt=prompt,
+                        max_new_tokens=args.max_new_tokens,
+                        temperature=args.temperature,
+                        repetition_penalty=args.repetition_penalty,
+                        max_seq_length=effective_max_seq_length,
+                        max_input_tokens=effective_max_input_tokens,
+                        log_prefix=f"    generation window [{i + 1}/{len(to_process)}]",
+                    )
+                else:
+                    raw_output = generate_one(
+                        model=model,
+                        tokenizer=tokenizer,
+                        prompt=prompt,
+                        max_new_tokens=args.max_new_tokens,
+                        temperature=args.temperature,
+                        repetition_penalty=args.repetition_penalty,
+                        max_seq_length=effective_max_seq_length,
+                        max_input_tokens=effective_max_input_tokens,
+                        text_tokenizer=text_tokenizer,
+                        log_prefix=f"    generation window [{i + 1}/{len(to_process)}]",
+                    )
 
                 structured, texts = parse_model_output(raw_output)
                 parse_ok = len(texts) > 0

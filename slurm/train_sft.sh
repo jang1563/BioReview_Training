@@ -80,12 +80,13 @@ echo ""
 echo "Python: $(which python) — $(python --version)"
 echo "PyTorch: $(python -c 'import torch; print(torch.__version__, "CUDA:", torch.cuda.is_available())')"
 
-# Check Unsloth availability
+# Check Unsloth availability without importing it in the shell preflight.
+# A full import can trigger heavyweight initialization before training starts.
 python -c "
-try:
-    from unsloth import FastLanguageModel
+import importlib.util
+if importlib.util.find_spec('unsloth') is not None:
     print('Backend: Unsloth (optimized)')
-except ImportError:
+else:
     print('Backend: PEFT + bitsandbytes (fallback)')
 "
 

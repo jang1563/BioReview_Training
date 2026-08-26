@@ -1,0 +1,23 @@
+{
+  "generated_at_utc": "20260313T054701Z",
+  "model_dir": "/athena/cayuga_0003/scratch/users/jak4013/BioReview_Training/models/qwen3_8b_all_nonfig_v1/checkpoint-300",
+  "engine": "unsloth",
+  "split": "val",
+  "temperature": 0.1,
+  "max_new_tokens": 4096,
+  "processed": 50,
+  "failed_parse": 1,
+  "total_concerns": 868,
+  "total_time": 2882.058069229126,
+  "eval_metrics": {
+    "recall_overall": 0.025411061285500747,
+    "precision_overall": 0.019585253456221197,
+    "f1_micro": 0.022121014964216004,
+    "recall_major": 0.041452380952380956,
+    "n_articles": 50,
+    "n_human_concerns": 669,
+    "n_tool_concerns": 868,
+    "n_zero_recall_articles": 38,
+    "n_perfect_recall_articles": 0
+  }
+}

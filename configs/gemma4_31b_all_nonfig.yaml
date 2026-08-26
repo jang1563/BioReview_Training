@@ -1,0 +1,55 @@
+# BioReview SFT Training Configuration
+# Google Gemma-4-31B + QLoRA (4-bit) — Phase 3 ensemble diversity
+
+model:
+  name: "/athena/masonlab/scratch/users/jak4013/huggingface/hub/models--unsloth--gemma-4-31B-it-unsloth-bnb-4bit/snapshots/a11e2d8a8842db472d9b300e1ad6f9d451fe9410"
+  max_seq_length: 8192                  # Conservative for A100 80GB; try 16384 later
+  dtype: null
+  load_in_4bit: true
+  chat_template: "gemma4"
+  truncation_side: "left"              # Preserve response tokens during truncation
+
+lora:
+  r: 16
+  lora_alpha: 32
+  lora_dropout: 0.05
+  target_modules:
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
+    - gate_proj
+    - up_proj
+    - down_proj
+  bias: "none"
+  use_gradient_checkpointing: "unsloth"  # Unsloth-optimized variant (saves ~30% more VRAM vs true)
+  use_rslora: false
+
+training:
+  num_train_epochs: 3
+  per_device_train_batch_size: 1
+  gradient_accumulation_steps: 8
+  learning_rate: 2.0e-4
+  lr_scheduler_type: "cosine"
+  warmup_ratio: 0.03
+  weight_decay: 0.01
+  max_grad_norm: 1.0
+  bf16: true
+  seed: 42
+  logging_steps: 10
+  save_strategy: "steps"
+  save_steps: 200                       # Resume-friendly for multi-day training
+  save_total_limit: 4
+  optim: "adamw_8bit"
+
+data:
+  train_path: "data/corpus_all_nonfig/sft_train.jsonl"
+  val_path: "data/corpus_all_nonfig/sft_val.jsonl"
+
+output:
+  dir: "models/gemma4_31b_all_nonfig_v1"
+
+inference:
+  temperature: 0.1
+  max_new_tokens: 4096
+  repetition_penalty: 1.05
